@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>JSLinux Relay Admin</title>
+  <style>
+    body { font-family: sans-serif; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ddd; padding: 8px; }
+    th { background-color: #f2f2f2; }
+    form { margin-bottom: 20px; }
+  </style>
+</head>
+<body>
+  <h1>JSLinux Relay Admin</h1>
+  <h2>Connected Clients</h2>
+  <table id="sessions">
+    <thead>
+      <tr>
+        <th>Session ID</th>
+        <th>Client IP</th>
+        <th>VM IP</th>
+        <th>VM MAC</th>
+        <th>Bytes Sent</th>
+        <th>Bytes Received</th>
+      </tr>
+    </thead>
+    <tbody>
+    </tbody>
+  </table>
+
+  <h2>Reverse Proxy Rules</h2>
+  <form id="proxy-form">
+    <label for="type">Type:</label>
+    <select id="type" name="type">
+      <option value="path">Path</option>
+      <option value="vhost">VHost</option>
+    </select>
+    <label for="value">Value:</label>
+    <input type="text" id="value" name="value" required>
+    <label for="vm">VM IP:</label>
+    <input type="text" id="vm" name="vm" required>
+    <label for="port">Port:</label>
+    <input type="number" id="port" name="port" required>
+    <label for="targetPath">Target Path (optional):</label>
+    <input type="text" id="targetPath" name="targetPath">
+    <button type="submit">Add Rule</button>
+  </form>
+  <table id="rules">
+    <thead>
+      <tr>
+        <th>Type</th>
+        <th>Value</th>
+        <th>Destination</th>
+        <th>Target Path</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+    </tbody>
+  </table>
+
+  <script>
+    async function fetchSessions() {
+      const response = await fetch('/api/sessions');
+      const sessions = await response.json();
+      const tbody = document.querySelector('#sessions tbody');
+      tbody.innerHTML = '';
+      for (const session of sessions) {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td>${session.sessionId}</td>
+          <td>${session.clientIP}</td>
+          <td>${session.vmIP}</td>
+          <td>${session.vmMAC}</td>
+          <td>${session.bytesSent}</td>
+          <td>${session.bytesReceived}</td>
+        `;
+        tbody.appendChild(row);
+      }
+    }
+    fetchSessions();
+    setInterval(fetchSessions, 5000);
+
+    const proxyForm = document.querySelector('#proxy-form');
+    proxyForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const formData = new FormData(proxyForm);
+      const rule = {
+        type: formData.get('type'),
+        value: formData.get('value'),
+        vm: formData.get('vm'),
+        port: parseInt(formData.get('port')),
+        targetPath: formData.get('targetPath'),
+      };
+      await fetch('/api/rules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(rule),
+      });
+      proxyForm.reset();
+      fetchRules();
+    });
+
+    async function fetchRules() {
+      const response = await fetch('/api/rules');
+      const rules = await response.json();
+      const tbody = document.querySelector('#rules tbody');
+      tbody.innerHTML = '';
+      for (const rule of rules) {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td>${rule.type}</td>
+          <td>${rule.value}</td>
+          <td>${rule.vm}:${rule.port}</td>
+          <td>${rule.targetPath || ''}</td>
+          <td><button onclick="deleteRule('${rule.id}')">Delete</button></td>
+        `;
+        tbody.appendChild(row);
+      }
+    }
+
+    async function deleteRule(id) {
+      await fetch(`/api/rules/${id}`, { method: 'DELETE' });
+      fetchRules();
+    }
+
+    fetchRules();
+  </script>
+</body>
+</html>
