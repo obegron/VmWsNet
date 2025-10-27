@@ -1,5 +1,4 @@
 const WebSocket = require("ws");
-const { exec } = require("child_process");
 const dgram = require("dgram");
 const net = require("net");
 
@@ -13,7 +12,6 @@ const RATE_LIMIT_BPS = RATE_LIMIT_KBPS * 1024;
 const TCP_WINDOW_SIZE = 1024 * 9; // Larger window for HTTP/2
 
 // IP allocation for VMs
-const VM_NETWORK = "10.0.2.0/24";
 const GATEWAY_IP = "10.0.2.2";
 const DHCP_START = 15; // Start assigning IPs from 10.0.2.15
 const DHCP_END = 254; // End at 10.0.2.254
@@ -116,21 +114,6 @@ class VMSession {
       );
     }, 100);
 
-    /*
-    this.cleanupInterval = setInterval(() => {
-      const now = Date.now();
-      for (const [key, conn] of this.reverseTcpConnections.entries()) {
-        if (conn.state === "SYN_SENT" && (now - conn.createdAt > 5000)) { // 5 seconds timeout
-          console.log(`[REVERSE TCP] Cleaning up stale connection ${key}`);
-          this.reverseTcpConnections.delete(key);
-          if (conn.onError) {
-            conn.onError(new Error("Connection timed out"));
-          }
-        }
-      }
-    }, 2000);
-    */
-
     if (ENABLE_DEBUG) {
       console.log(`New session created for ${clientIP}`);
     }
@@ -175,7 +158,7 @@ class VMSession {
       const dstPort = port;
       const srcIP = GATEWAY_IP;
       const dstIP = this.vmIP;
-      const connKey = srcPort; // Simplified key
+      const connKey = srcPort;
 
       const isn = Math.floor(Math.random() * 0xFFFFFFFF);
       const conn = {
@@ -233,7 +216,7 @@ class VMSession {
     const FIN = (flags & 0x01) !== 0;
     const RST = (flags & 0x04) !== 0;
 
-    const connKey = dstPort; // Simplified key
+    const connKey = dstPort;
     const conn = this.reverseTcpConnections.get(connKey);
 
     if (!conn) {
@@ -461,7 +444,7 @@ class VMSession {
     // Handle UDP broadcast
     if (ENABLE_VM_TO_VM && dstIP === "10.0.2.255" && protocol === 17) {
       if (ENABLE_DEBUG) console.log(`📢 Broadcasting UDP packet from ${srcIP}`);
-      activeSessions.forEach((session, sessionId) => {
+      activeSessions.forEach((session, _sessionId) => {
         if (session.vmIP && session.vmIP !== srcIP) {
           if (ENABLE_DEBUG) console.log(`   -> Relaying to ${session.vmIP}`);
           session.sendIPToVM(ipPacket);
@@ -561,7 +544,7 @@ class VMSession {
       socket.setNoDelay(true);
       try {
         socket.setKeepAlive(true, 30000);
-      } catch (e) {}
+      } catch (_e) {}
 
       const isn = Math.floor(Math.random() * 0xFFFFFFFF);
       const actualWindow = window << windowScale;
@@ -1742,4 +1725,3 @@ const proxyServer = http.createServer((req, res) => {
 proxyServer.listen(PROXY_PORT, () => {
   console.log(`💡 Proxy server listening on port ${PROXY_PORT}`);
 });
-
