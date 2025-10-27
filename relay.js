@@ -51,7 +51,7 @@ function releaseIP(mac) {
     usedIPs.delete(lastOctet);
     macToIP.delete(mac);
     ipToSession.delete(ip);
-    console.log(`ðŸ”“ Released ${ip} from MAC ${mac}`);
+    console.log(`🔓 Released ${ip} from MAC ${mac}`);
   }
 }
 
@@ -137,23 +137,23 @@ class VMSession {
   }
 
   sendRSTForReverse(srcPort, dstPort, srcIP, dstIP, seqNum) {
-  const tcp = Buffer.alloc(20);
-  tcp.writeUInt16BE(srcPort, 0);
-  tcp.writeUInt16BE(dstPort, 2);
-  tcp.writeUInt32BE(seqNum, 4);
-  tcp.writeUInt32BE(0, 8);
-  tcp[12] = 0x50;
-  tcp[13] = 0x04; // RST
-  tcp.writeUInt16BE(0, 14);
-  tcp.writeUInt16BE(0, 16);
-  tcp.writeUInt16BE(0, 18);
+    const tcp = Buffer.alloc(20);
+    tcp.writeUInt16BE(srcPort, 0);
+    tcp.writeUInt16BE(dstPort, 2);
+    tcp.writeUInt32BE(seqNum, 4);
+    tcp.writeUInt32BE(0, 8);
+    tcp[12] = 0x50;
+    tcp[13] = 0x04; // RST
+    tcp.writeUInt16BE(0, 14);
+    tcp.writeUInt16BE(0, 16);
+    tcp.writeUInt16BE(0, 18);
 
-  const ip = this.buildIP(tcp, srcIP, dstIP, 6);
-  const cksum = this.calcTCPChecksum(ip);
-  ip.writeUInt16BE(cksum, 20 + 16);
+    const ip = this.buildIP(tcp, srcIP, dstIP, 6);
+    const cksum = this.calcTCPChecksum(ip);
+    ip.writeUInt16BE(cksum, 20 + 16);
 
-  this.sendIPToVM(ip);
-}
+    this.sendIPToVM(ip);
+  }
 
   createTCPConnection(port) {
     return new Promise((resolve, reject) => {
@@ -168,7 +168,10 @@ class VMSession {
         if (attempts > 1000) {
           return reject(new Error("No available proxy ports"));
         }
-      } while (this.reverseTcpConnections.has(srcPort) || this.recentlyClosed.has(srcPort));
+      } while (
+        this.reverseTcpConnections.has(srcPort) ||
+        this.recentlyClosed.has(srcPort)
+      );
       const dstPort = port;
       const srcIP = GATEWAY_IP;
       const dstIP = this.vmIP;
@@ -182,20 +185,33 @@ class VMSession {
         vmSeq: 0,
         upstream: new PassThrough(),
         downstream: new PassThrough(),
-        onConnected: () => resolve({ upstream: conn.upstream, downstream: conn.downstream, connKey: connKey }),
+        onConnected: () =>
+          resolve({
+            upstream: conn.upstream,
+            downstream: conn.downstream,
+            connKey: connKey,
+          }),
         onError: (err) => reject(err),
       };
       this.reverseTcpConnections.set(connKey, conn);
 
-      conn.upstream.on('data', (data) => {
-        this.sendTCP(conn, data, srcPort, dstPort, srcIP, dstIP, { ack: true, psh: true });
+      conn.upstream.on("data", (data) => {
+        this.sendTCP(conn, data, srcPort, dstPort, srcIP, dstIP, {
+          ack: true,
+          psh: true,
+        });
       });
 
-      conn.upstream.on('close', () => {
-        this.sendTCP(conn, Buffer.alloc(0), srcPort, dstPort, srcIP, dstIP, { fin: true, ack: true });
+      conn.upstream.on("close", () => {
+        this.sendTCP(conn, Buffer.alloc(0), srcPort, dstPort, srcIP, dstIP, {
+          fin: true,
+          ack: true,
+        });
       });
 
-      this.sendTCP(conn, Buffer.alloc(0), srcPort, dstPort, srcIP, dstIP, { syn: true });
+      this.sendTCP(conn, Buffer.alloc(0), srcPort, dstPort, srcIP, dstIP, {
+        syn: true,
+      });
     });
   }
 
@@ -215,28 +231,32 @@ class VMSession {
     const SYN = (flags & 0x02) !== 0;
     const ACK = (flags & 0x10) !== 0;
     const FIN = (flags & 0x01) !== 0;
-    const RST = (flags & 0x04) !== 0; 
+    const RST = (flags & 0x04) !== 0;
 
     const connKey = dstPort; // Simplified key
     const conn = this.reverseTcpConnections.get(connKey);
 
-if (!conn) {
-  if (this.recentlyClosed.has(connKey)) {
-    return;
-  }
-  if (!RST && ENABLE_DEBUG) {
-    console.log(`[REVERSE TCP] No connection for port ${connKey}, sending RST`);
-  }
-  if (!RST) {
-    this.sendRSTForReverse(srcPort, dstPort, srcIP, dstIP, ackNum);
-  }
-  return;
-}
+    if (!conn) {
+      if (this.recentlyClosed.has(connKey)) {
+        return;
+      }
+      if (!RST && ENABLE_DEBUG) {
+        console.log(
+          `[REVERSE TCP] No connection for port ${connKey}, sending RST`,
+        );
+      }
+      if (!RST) {
+        this.sendRSTForReverse(srcPort, dstPort, srcIP, dstIP, ackNum);
+      }
+      return;
+    }
 
     if (conn.state === "SYN_SENT" && SYN && ACK) {
       conn.state = "ESTABLISHED";
       conn.vmSeq = (seqNum + 1) >>> 0;
-      this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, srcIP, dstIP, { ack: true });
+      this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, srcIP, dstIP, {
+        ack: true,
+      });
       if (conn.onConnected) {
         conn.onConnected();
       }
@@ -249,21 +269,27 @@ if (!conn) {
     if (payload.length > 0) {
       conn.downstream.write(payload);
       conn.vmSeq = (conn.vmSeq + payload.length) >>> 0;
-      this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, srcIP, dstIP, { ack: true });
+      this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, srcIP, dstIP, {
+        ack: true,
+      });
     }
 
     if (FIN) {
-      console.log(`[REVERSE TCP] [${this.vmIP}] FIN received, closing connection ${connKey}`);
+      console.log(
+        `[REVERSE TCP] [${this.vmIP}] FIN received, closing connection ${connKey}`,
+      );
       conn.state = "CLOSED";
       conn.downstream.end();
       this.reverseTcpConnections.delete(connKey);
-  
+
       // Send final ACK for the FIN
-      this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, srcIP, dstIP, { ack: true });
-  
+      this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, srcIP, dstIP, {
+        ack: true,
+      });
+
       this.recentlyClosed.add(connKey);
       setTimeout(() => {
-      this.recentlyClosed.delete(connKey);
+        this.recentlyClosed.delete(connKey);
       }, 2000); // Reduced from 5000ms
     }
   }
@@ -331,7 +357,8 @@ if (!conn) {
 
     if (ENABLE_DEBUG) {
       console.log(
-        `🔍 ARP ${opcode === 1 ? "Request" : "Reply"
+        `🔍 ARP ${
+          opcode === 1 ? "Request" : "Reply"
         }: ${senderIP} -> ${targetIP}`,
       );
     }
@@ -419,10 +446,10 @@ if (!conn) {
       const proto = protocol === 6
         ? "TCP"
         : protocol === 17
-          ? "UDP"
-          : protocol === 1
-            ? "ICMP"
-            : protocol;
+        ? "UDP"
+        : protocol === 1
+        ? "ICMP"
+        : protocol;
       console.log(`📦 IPv4 ${proto}: ${srcIP} -> ${dstIP}`);
     }
 
@@ -534,7 +561,7 @@ if (!conn) {
       socket.setNoDelay(true);
       try {
         socket.setKeepAlive(true, 30000);
-      } catch (e) { }
+      } catch (e) {}
 
       const isn = Math.floor(Math.random() * 0xFFFFFFFF);
       const actualWindow = window << windowScale;
@@ -1555,10 +1582,11 @@ function findProxyRule(req) {
   return rule;
 }
 
-
 async function proxyRequest(req, res, rule) {
-  console.log(`[PROXY] Request: ${req.method} ${req.url} -> ${rule.vm}:${rule.port}`);
-  
+  console.log(
+    `[PROXY] Request: ${req.method} ${req.url} -> ${rule.vm}:${rule.port}`,
+  );
+
   const targetSession = ipToSession.get(rule.vm);
   if (!targetSession) {
     res.writeHead(502, { "Content-Type": "text/plain" });
@@ -1568,12 +1596,13 @@ async function proxyRequest(req, res, rule) {
 
   try {
     console.log(`[PROXY] Creating TCP connection to ${rule.vm}:${rule.port}`);
-    const { upstream, downstream, connKey } = await targetSession.createTCPConnection(rule.port);
+    const { upstream, downstream, connKey } = await targetSession
+      .createTCPConnection(rule.port);
     console.log(`[PROXY] TCP connection established with key ${connKey}`);
 
     let url = req.url;
     if (rule.targetPath) {
-      if (rule.type === 'path') {
+      if (rule.type === "path") {
         url = rule.targetPath + req.url.substring(rule.value.length);
       } else {
         url = rule.targetPath + req.url;
@@ -1582,32 +1611,37 @@ async function proxyRequest(req, res, rule) {
 
     const headers = [`${req.method} ${url} HTTP/1.1`];
     for (let i = 0; i < req.rawHeaders.length; i += 2) {
-      if (req.rawHeaders[i].toLowerCase() !== 'host' && req.rawHeaders[i].toLowerCase() !== 'connection') {
-        headers.push(`${req.rawHeaders[i]}: ${req.rawHeaders[i+1]}`);
+      if (
+        req.rawHeaders[i].toLowerCase() !== "host" &&
+        req.rawHeaders[i].toLowerCase() !== "connection"
+      ) {
+        headers.push(`${req.rawHeaders[i]}: ${req.rawHeaders[i + 1]}`);
       }
     }
     headers.push(`Host: ${rule.vm}:${rule.port}`);
     headers.push(`Connection: close`); // Force connection close
-    headers.push(''); // Empty line to end headers
-    headers.push(''); // This creates \r\n\r\n when joined
+    headers.push(""); // Empty line to end headers
+    headers.push(""); // This creates \r\n\r\n when joined
 
-    const requestData = headers.join('\r\n');
-    console.log(`[PROXY] Sending request (${requestData.length} bytes):\n${requestData}`);
-    
+    const requestData = headers.join("\r\n");
+    console.log(
+      `[PROXY] Sending request (${requestData.length} bytes):\n${requestData}`,
+    );
+
     // Send request and ensure it's flushed
     console.log(`[PROXY] Writing ${requestData.length} bytes to upstream...`);
     const sent = upstream.write(requestData);
     console.log(`[PROXY] Write returned: ${sent}`);
     if (!sent) {
       console.log(`[PROXY] ⚠️ Upstream buffer full, waiting for drain...`);
-      await new Promise(resolve => upstream.once('drain', resolve));
+      await new Promise((resolve) => upstream.once("drain", resolve));
       console.log(`[PROXY] ✅ Upstream drained`);
     }
-    
-    upstream.on('error', (err) => {
-      console.error('[PROXY] Upstream stream error:', err);
+
+    upstream.on("error", (err) => {
+      console.error("[PROXY] Upstream stream error:", err);
     });
-    
+
     // Buffer all data before sending to response
     const chunks = [];
     let totalBytes = 0;
@@ -1620,7 +1654,7 @@ async function proxyRequest(req, res, rule) {
       setTimeout(() => {
         targetSession.recentlyClosed.delete(connKey);
       }, 5000);
-      
+
       if (!res.headersSent) {
         res.writeHead(504, { "Content-Type": "text/plain" });
         res.end("Gateway Timeout");
@@ -1628,24 +1662,30 @@ async function proxyRequest(req, res, rule) {
       upstream.destroy();
       downstream.destroy();
     }, 10000);
-    
-    downstream.on('data', (chunk) => {
+
+    downstream.on("data", (chunk) => {
       console.log(`[PROXY] Received ${chunk.length} bytes from downstream`);
       clearTimeout(responseTimeout);
       totalBytes += chunk.length;
       chunks.push(chunk);
     });
-    
-    downstream.on('end', () => {
+
+    downstream.on("end", () => {
       clearTimeout(responseTimeout);
-      console.log(`[PROXY] Downstream ended, total ${totalBytes} bytes received`);
+      console.log(
+        `[PROXY] Downstream ended, total ${totalBytes} bytes received`,
+      );
       if (chunks.length > 0) {
         const fullResponse = Buffer.concat(chunks);
         console.log(`[PROXY] Sending response (${fullResponse.length} bytes)`);
         if (ENABLE_DEBUG) {
-          console.log(`[PROXY] First 400 bytes (hex):\n${fullResponse.slice(0, 400).toString('hex')}`);
+          console.log(
+            `[PROXY] First 400 bytes (hex):\n${
+              fullResponse.slice(0, 400).toString("hex")
+            }`,
+          );
         }
-        
+
         // Send raw response - the browser will parse HTTP headers
         res.socket.write(fullResponse);
         res.socket.end();
@@ -1656,7 +1696,7 @@ async function proxyRequest(req, res, rule) {
       }
     });
 
-    req.on('close', () => {
+    req.on("close", () => {
       console.log(`[PROXY] Client request closed`);
       targetSession.reverseTcpConnections.delete(connKey);
       targetSession.recentlyClosed.add(connKey);
@@ -1667,29 +1707,27 @@ async function proxyRequest(req, res, rule) {
       downstream.destroy();
     });
 
-    upstream.on('error', (err) => {
-      console.error('[PROXY] Upstream error:', err);
-      if (!res.headersSent) {
-        res.writeHead(502, { "Content-Type": "text/plain" });
-        res.end("Bad Gateway");
-      }
-    });
-    
-    downstream.on('error', (err) => {
-      console.error('[PROXY] Downstream error:', err);
+    upstream.on("error", (err) => {
+      console.error("[PROXY] Upstream error:", err);
       if (!res.headersSent) {
         res.writeHead(502, { "Content-Type": "text/plain" });
         res.end("Bad Gateway");
       }
     });
 
+    downstream.on("error", (err) => {
+      console.error("[PROXY] Downstream error:", err);
+      if (!res.headersSent) {
+        res.writeHead(502, { "Content-Type": "text/plain" });
+        res.end("Bad Gateway");
+      }
+    });
   } catch (err) {
-    console.error('[PROXY] Error creating TCP connection:', err);
+    console.error("[PROXY] Error creating TCP connection:", err);
     res.writeHead(502, { "Content-Type": "text/plain" });
     res.end("Bad Gateway: Could not connect to VM");
   }
 }
-
 
 const proxyServer = http.createServer((req, res) => {
   const rule = findProxyRule(req);
@@ -1704,3 +1742,4 @@ const proxyServer = http.createServer((req, res) => {
 proxyServer.listen(PROXY_PORT, () => {
   console.log(`💡 Proxy server listening on port ${PROXY_PORT}`);
 });
+
