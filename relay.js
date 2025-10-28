@@ -693,15 +693,22 @@ class VMSession {
       if (
         conn.handshakeDataLength &&
         payload.length === conn.handshakeDataLength &&
-        seqNum === expected - conn.handshakeDataLength
+        (seqNum === expected || seqNum === expected - conn.handshakeDataLength)
       ) {
         if (ENABLE_DEBUG) {
           console.log(
             `   🔄 Skipping duplicate handshake data (${payload.length} bytes)`,
           );
         }
+        // Update vmSeq to skip over these bytes since we already handled them
+        conn.vmSeq = (seqNum + payload.length) >>> 0;
         delete conn.handshakeDataLength;
-        return; // Don't forward or ACK - v86 already got the ACK
+        
+        // Send ACK to confirm (v86 expects this)
+        this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, dstIP, srcIP, {
+          ack: true,
+        });
+        return; // Don't forward the data
       }
 
       if (seqNum === expected) {
@@ -736,21 +743,23 @@ class VMSession {
     }
 
     if (FIN) {
-      conn.vmSeq = (conn.vmSeq + 1) >>> 0;
-    }
+      if (ENABLE_DEBUG) console.log(`   Closing (FIN): ${connKey}`);
 
-    if (payload.length > 0 || FIN) {
+      // A FIN consumes a sequence number. We should only process it if it's the one we expect.
+      if (seqNum === conn.vmSeq) {
+        conn.vmSeq = (conn.vmSeq + 1) >>> 0;
+      }
+
+      // Send ACK for the FIN.
       this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, dstIP, srcIP, {
         ack: true,
       });
-    }
 
-    if (FIN) {
-      if (ENABLE_DEBUG) console.log(`   Closing (FIN): ${connKey}`);
       conn.state = "CLOSED";
       if (conn.socket) conn.socket.end();
       if (conn.retransmitTimeout) clearTimeout(conn.retransmitTimeout);
       setTimeout(() => this.tcpConnections.delete(connKey), 2000);
+      return;
     }
 
     if (RST) {
