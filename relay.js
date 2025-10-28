@@ -659,44 +659,87 @@ class VMSession {
       }
     }
 
-    if (conn.state === "SYN_SENT" && ACK) {
-      conn.state = "ESTABLISHED";
-      if (ENABLE_DEBUG) console.log(`   🤝 Connection established: ${connKey}`);
-    }
-
     const payloadOffset = ihl + dataOffset;
     const payload = ipPacket.slice(payloadOffset);
 
+    // Track if we just established the connection
+    let justEstablished = false;
+
+    if (conn.state === "SYN_SENT" && ACK) {
+      conn.state = "ESTABLISHED";
+      if (ENABLE_DEBUG) console.log(`   🤝 Connection established: ${connKey}`);
+
+      // v86 may send data with the handshake ACK
+      // We ignore it and let v86 retransmit, but DON'T update vmSeq
+      if (payload.length > 0 && ENABLE_DEBUG) {
+        console.log(
+          `   ℹ️ Ignoring ${payload.length} bytes in handshake (v86 will retransmit)`,
+        );
+      }
+      // vmSeq stays at initial+1, we'll process the data when retransmitted
+      return; // Don't process anything else in this packet
+    }
+
+    // Only process data if we're in ESTABLISHED state
+    if (conn.state !== "ESTABLISHED") return;
+
+    // Handle payload data
     if (payload.length > 0) {
       const expected = conn.vmSeq;
+
       if (seqNum === expected) {
+        // Perfect - expected sequence
+        if (ENABLE_DEBUG) {
+          console.log(
+            `   📥 Received ${payload.length} bytes at expected seq ${seqNum}`,
+          );
+        }
         conn.vmSeq = (seqNum + payload.length) >>> 0;
-      } else if (this.seqLessThan(seqNum, expected)) {
-        if (ENABLE_DEBUG) console.log(`   🔄 Retransmission from VM`);
+
+        // Forward payload to real socket
+        if (conn.socket && conn.socket.writable) {
+          if (ENABLE_DEBUG) {
+            console.log(
+              `   📤 Forwarding ${payload.length} bytes to ${dstIP}:${dstPort}`,
+            );
+          }
+          conn.socket.write(payload);
+        }
+
+        // Send ACK for the data
         this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, dstIP, srcIP, {
           ack: true,
         });
-        return;
+      } else if (this.seqLessThan(seqNum, expected)) {
+        // Old data - retransmission, ACK it again to prevent more retransmits
+        if (ENABLE_DEBUG) {
+          console.log(
+            `   🔄 Retransmission from VM (seq=${seqNum}, already have up to ${expected})`,
+          );
+        }
+        this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, dstIP, srcIP, {
+          ack: true,
+        });
       } else {
-        if (ENABLE_DEBUG) console.log(`   ⚠ Out of order from VM`);
-        return;
+        // Future sequence number - out of order
+        if (ENABLE_DEBUG) {
+          console.log(
+            `   ⚠ Out of order from VM (seq=${seqNum}, expected=${expected})`,
+          );
+        }
+        // Send duplicate ACK with current expectation
+        this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, dstIP, srcIP, {
+          ack: true,
+        });
       }
+      return; // Processed the data, done with this packet
     }
 
     if (FIN) {
       conn.vmSeq = (conn.vmSeq + 1) >>> 0;
     }
 
-    if (payload.length > 0 && conn.socket && conn.socket.writable) {
-      if (ENABLE_DEBUG) {
-        console.log(
-          `    Forwarding ${payload.length} bytes to ${dstIP}:${dstPort}`,
-        );
-      }
-      conn.socket.write(payload);
-    }
-
-    if (payload.length > 0 || FIN) {
+    if ((payload.length > 0 && seqNum === conn.vmSeq - payload.length) || FIN) {
       this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, dstIP, srcIP, {
         ack: true,
       });
@@ -704,16 +747,30 @@ class VMSession {
 
     if (FIN) {
       if (ENABLE_DEBUG) console.log(`   Closing (FIN): ${connKey}`);
+      conn.vmSeq = (conn.vmSeq + 1) >>> 0;
+
+      // Send ACK for FIN
+      this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, dstIP, srcIP, {
+        ack: true,
+      });
+
       conn.state = "CLOSED";
       if (conn.socket) conn.socket.end();
       if (conn.retransmitTimeout) clearTimeout(conn.retransmitTimeout);
       setTimeout(() => this.tcpConnections.delete(connKey), 2000);
+      return;
     }
 
+    // Handle RST
     if (RST) {
+      if (ENABLE_DEBUG) console.log(`   Connection reset: ${connKey}`);
       if (conn.socket) conn.socket.destroy();
       if (conn.retransmitTimeout) clearTimeout(conn.retransmitTimeout);
       this.tcpConnections.delete(connKey);
+      return;
+    }
+    if (ACK && ENABLE_DEBUG) {
+      console.log(`   Pure ACK received`);
     }
   }
 
