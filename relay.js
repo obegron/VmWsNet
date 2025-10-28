@@ -340,7 +340,7 @@ class VMSession {
 
     if (ENABLE_DEBUG) {
       console.log(
-        `🔍 ARP ${
+        `🔍 ARP ${ 
           opcode === 1 ? "Request" : "Reply"
         }: ${senderIP} -> ${targetIP}`,
       );
@@ -667,59 +667,53 @@ class VMSession {
 
     if (conn.state === "SYN_SENT" && ACK) {
       conn.state = "ESTABLISHED";
+      justEstablished = true;
       if (ENABLE_DEBUG) console.log(`   🤝 Connection established: ${connKey}`);
 
-      // v86 may send data with the handshake ACK
-      // We ignore it and let v86 retransmit, but DON'T update vmSeq
-      if (payload.length > 0 && ENABLE_DEBUG) {
-        console.log(
-          `   ℹ️ Ignoring ${payload.length} bytes in handshake (v86 will retransmit)`,
-        );
+      // v86 sends data in handshake but will retransmit it - ignore for now
+      if (payload.length > 0) {
+        if (ENABLE_DEBUG) {
+          console.log(
+            `   ℹ️ Ignoring ${payload.length} bytes in handshake (v86 will retransmit)`,
+          );
+        }
+        // Track that we need to skip these bytes when they arrive again
+        conn.handshakeDataLength = payload.length;
+        // Send ACK to prevent v86 from retransmitting later
+        this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, dstIP, srcIP, {
+          ack: true,
+        });
       }
-      // vmSeq stays at initial+1, we'll process the data when retransmitted
-      return; // Don't process anything else in this packet
     }
 
-    // Only process data if we're in ESTABLISHED state
-    if (conn.state !== "ESTABLISHED") return;
-
-    // Handle payload data
-    if (payload.length > 0) {
+    // Only process sequence numbers if there's actual data AND we didn't just establish
+    if (payload.length > 0 && !justEstablished) {
       const expected = conn.vmSeq;
+
+      if (
+        conn.handshakeDataLength &&
+        payload.length === conn.handshakeDataLength &&
+        seqNum === expected - conn.handshakeDataLength
+      ) {
+        if (ENABLE_DEBUG) {
+          console.log(
+            `   🔄 Skipping duplicate handshake data (${payload.length} bytes)`,
+          );
+        }
+        delete conn.handshakeDataLength;
+        return; // Don't forward or ACK - v86 already got the ACK
+      }
 
       if (seqNum === expected) {
         // Perfect - expected sequence
-        if (ENABLE_DEBUG) {
-          console.log(
-            `   📥 Received ${payload.length} bytes at expected seq ${seqNum}`,
-          );
-        }
         conn.vmSeq = (seqNum + payload.length) >>> 0;
-
-        // Forward payload to real socket
-        if (conn.socket && conn.socket.writable) {
-          if (ENABLE_DEBUG) {
-            console.log(
-              `   📤 Forwarding ${payload.length} bytes to ${dstIP}:${dstPort}`,
-            );
-          }
-          conn.socket.write(payload);
-        }
-
-        // Send ACK for the data
-        this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, dstIP, srcIP, {
-          ack: true,
-        });
       } else if (this.seqLessThan(seqNum, expected)) {
-        // Old data - retransmission, ACK it again to prevent more retransmits
-        if (ENABLE_DEBUG) {
-          console.log(
-            `   🔄 Retransmission from VM (seq=${seqNum}, already have up to ${expected})`,
-          );
-        }
+        // Old data - retransmission
+        if (ENABLE_DEBUG) console.log(`   🔄 Retransmission from VM`);
         this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, dstIP, srcIP, {
           ack: true,
         });
+        return;
       } else {
         // Future sequence number - out of order
         if (ENABLE_DEBUG) {
@@ -727,19 +721,25 @@ class VMSession {
             `   ⚠ Out of order from VM (seq=${seqNum}, expected=${expected})`,
           );
         }
-        // Send duplicate ACK with current expectation
-        this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, dstIP, srcIP, {
-          ack: true,
-        });
+        return;
       }
-      return; // Processed the data, done with this packet
+
+      // Forward payload to real socket
+      if (conn.socket && conn.socket.writable) {
+        if (ENABLE_DEBUG) {
+          console.log(
+            `    Forwarding ${payload.length} bytes to ${dstIP}:${dstPort}`,
+          );
+        }
+        conn.socket.write(payload);
+      }
     }
 
     if (FIN) {
       conn.vmSeq = (conn.vmSeq + 1) >>> 0;
     }
 
-    if ((payload.length > 0 && seqNum === conn.vmSeq - payload.length) || FIN) {
+    if (payload.length > 0 || FIN) {
       this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, dstIP, srcIP, {
         ack: true,
       });
@@ -747,30 +747,16 @@ class VMSession {
 
     if (FIN) {
       if (ENABLE_DEBUG) console.log(`   Closing (FIN): ${connKey}`);
-      conn.vmSeq = (conn.vmSeq + 1) >>> 0;
-
-      // Send ACK for FIN
-      this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, dstIP, srcIP, {
-        ack: true,
-      });
-
       conn.state = "CLOSED";
       if (conn.socket) conn.socket.end();
       if (conn.retransmitTimeout) clearTimeout(conn.retransmitTimeout);
       setTimeout(() => this.tcpConnections.delete(connKey), 2000);
-      return;
     }
 
-    // Handle RST
     if (RST) {
-      if (ENABLE_DEBUG) console.log(`   Connection reset: ${connKey}`);
       if (conn.socket) conn.socket.destroy();
       if (conn.retransmitTimeout) clearTimeout(conn.retransmitTimeout);
       this.tcpConnections.delete(connKey);
-      return;
-    }
-    if (ACK && ENABLE_DEBUG) {
-      console.log(`   Pure ACK received`);
     }
   }
 
@@ -1664,9 +1650,7 @@ async function proxyRequest(req, res, rule) {
     headers.push(""); // This creates \r\n\r\n when joined
 
     const requestData = headers.join("\r\n");
-    console.log(
-      `[PROXY] Sending request (${requestData.length} bytes):\n${requestData}`,
-    );
+    console.log( `[PROXY] Sending request (${requestData.length} bytes): ${requestData}`);
 
     // Send request and ensure it's flushed
     console.log(`[PROXY] Writing ${requestData.length} bytes to upstream...`);
@@ -1720,9 +1704,7 @@ async function proxyRequest(req, res, rule) {
         console.log(`[PROXY] Sending response (${fullResponse.length} bytes)`);
         if (ENABLE_DEBUG) {
           console.log(
-            `[PROXY] First 400 bytes (hex):\n${
-              fullResponse.slice(0, 400).toString("hex")
-            }`,
+            `[PROXY] First 400 bytes (hex): ${fullResponse.slice(0, 400).toString("hex")}`,
           );
         }
 
