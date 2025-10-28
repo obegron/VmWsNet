@@ -31,8 +31,6 @@ openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -node
 
 This will create `key.pem` and `cert.pem` in your project directory. When prompted, you can leave the fields for distinguished name blank.
 
-Make sure `ENABLE_WSS` is set to `true` in `relay.js` to use the secure server.
-
 ### 3. Running the relay
 
 Once the dependencies are installed and you have your key pair (if using WSS), you can start the relay server:
@@ -46,4 +44,3 @@ The server will start, and you can see log output in your console.
 ### 4. Admin UI
 
 The project includes a simple web-based admin UI. By default, it's available at `http://localhost:8001`.
-
