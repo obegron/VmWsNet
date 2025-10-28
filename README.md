@@ -37,7 +37,10 @@ Once the dependencies are installed and you have your key pair (if using WSS), y
 
 ```bash
 node relay.js
+
 ```
+
+| In the browser you will use the relay first visit <https://127.0.0.1:8443> and trust the certificate you created.
 
 The server will start, and you can see log output in your console.
 
