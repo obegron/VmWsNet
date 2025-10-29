@@ -290,6 +290,37 @@ class VMSession {
 
     if (conn.state !== "ESTABLISHED") return;
 
+    if (RST) {
+      if (ENABLE_DEBUG) {
+        console.log(
+          `[REVERSE TCP] RST received, closing connection ${connKey}`,
+        );
+      }
+      conn.state = "CLOSED";
+      conn.downstream.end();
+      this.reverseTcpConnections.delete(connKey);
+      return; // Exit immediately
+    }
+
+    if (payload.length === 6) {
+      const allSpaces = payload.every((b) => b === 0x20);
+      const allZeros = payload.every((b) => b === 0);
+
+      if (allSpaces || allZeros) {
+        if (ENABLE_DEBUG) {
+          console.log(
+            `[R-TRACE] Ignoring 6-byte ${allSpaces ? "spaces" : "zeros"
+            } artifact`,
+          );
+        }
+        // Don't update vmSeq, just ACK
+        this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, srcIP, dstIP, {
+          ack: true,
+        });
+        return;
+      }
+    }
+
     if (payload.length > 0) {
       // Check if this is the data we expect
       if (seqNum !== conn.vmSeq) {
@@ -303,15 +334,7 @@ class VMSession {
         });
         return;
       }
-
-      // v86 sometimes sends a 6-byte payload with ACKs that should be ignored.
-      if (payload.length === 6 && payload.readUInt32BE(0) === 0) {
-        if (ENABLE_DEBUG) {
-          console.log(`[R-TRACE] Ignoring 6-byte garbage payload.`);
-        }
-        return;
-      }
-
+      
       // Write to downstream and wait for it to drain before ACKing
       const canWrite = conn.downstream.write(payload);
       conn.vmSeq = (conn.vmSeq + payload.length) >>> 0;
@@ -417,8 +440,7 @@ class VMSession {
 
     if (ENABLE_DEBUG) {
       console.log(
-        `🔍 ARP ${
-          opcode === 1 ? "Request" : "Reply"
+        `🔍 ARP ${opcode === 1 ? "Request" : "Reply"
         }: ${senderIP} -> ${targetIP}`,
       );
     }
@@ -506,10 +528,10 @@ class VMSession {
       const proto = protocol === 6
         ? "TCP"
         : protocol === 17
-        ? "UDP"
-        : protocol === 1
-        ? "ICMP"
-        : protocol;
+          ? "UDP"
+          : protocol === 1
+            ? "ICMP"
+            : protocol;
       console.log(`📦 IPv4 ${proto}: ${srcIP} -> ${dstIP}`);
     }
 
@@ -621,7 +643,7 @@ class VMSession {
       socket.setNoDelay(true);
       try {
         socket.setKeepAlive(true, 30000);
-      } catch (_e) {}
+      } catch (_e) { }
 
       const isn = Math.floor(Math.random() * 0xFFFFFFFF);
       const actualWindow = window << windowScale;
@@ -777,16 +799,21 @@ class VMSession {
       return; // Exit immediately, don't process anything else
     }
 
-
     // Check for 6-byte TCP stack artifacts EARLY (before any other processing)
     if (payload.length === 6) {
-      const allSpaces = payload.every(b => b === 0x20);
-      const allZeros = payload.every(b => b === 0);
-      
+      const allSpaces = payload.every((b) => b === 0x20);
+      const allZeros = payload.every((b) => b === 0);
+
       if (allSpaces || allZeros) {
         if (ENABLE_DEBUG) {
-          console.log(`   🔍 6-byte packet: ${allSpaces ? 'all spaces (0x20)' : 'all zeros'}`);
-          console.log(`   ⚠️ Ignoring VM TCP stack artifact (6-byte ${allSpaces ? 'spaces' : 'zeros'})`);
+          console.log(
+            `   🔍 6-byte packet: ${allSpaces ? "all spaces (0x20)" : "all zeros"
+            }`,
+          );
+          console.log(
+            `   ⚠️ Ignoring VM TCP stack artifact (6-byte ${allSpaces ? "spaces" : "zeros"
+            })`,
+          );
         }
         // Don't forward, don't update vmSeq, just ACK with current state
         this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, dstIP, srcIP, {
@@ -796,10 +823,9 @@ class VMSession {
       }
     }
 
-
     if (payload.length > 0) {
       const expected = conn.vmSeq;
-      
+
       if (seqNum === expected) {
         // Perfect - expected sequence
         conn.vmSeq = (seqNum + payload.length) >>> 0;
@@ -855,7 +881,6 @@ class VMSession {
       setTimeout(() => this.tcpConnections.delete(connKey), 2000);
       return;
     }
-
   }
 
   retransmitFirst(connKey, info) {
@@ -1971,8 +1996,7 @@ async function proxyRequest(req, res, rule) {
         console.log(`[PROXY] Sending response (${fullResponse.length} bytes)`);
         if (ENABLE_DEBUG) {
           console.log(
-            `[PROXY] First 400 bytes (hex): ${
-              fullResponse.slice(0, 400).toString("hex")
+            `[PROXY] First 400 bytes (hex): ${fullResponse.slice(0, 400).toString("hex")
             }`,
           );
         }
