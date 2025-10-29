@@ -9,7 +9,8 @@ const ENABLE_DEBUG = false;
 const ENABLE_VM_TO_VM = true; // Set to false to isolate VMs from each other
 const RATE_LIMIT_KBPS = 1024;
 const RATE_LIMIT_BPS = RATE_LIMIT_KBPS * 1024;
-const TCP_WINDOW_SIZE = 1024 * 9; // Larger window for HTTP/2
+const TCP_WINDOW_SIZE = 1024 * 10; // Larger window for HTTP/2
+const DNS_SERVER_IP = "8.8.8.8";
 
 // IP allocation for VMs
 const GATEWAY_IP = "10.0.2.2";
@@ -309,8 +310,7 @@ class VMSession {
       if (allSpaces || allZeros) {
         if (ENABLE_DEBUG) {
           console.log(
-            `[R-TRACE] Ignoring 6-byte ${
-              allSpaces ? "spaces" : "zeros"
+            `[R-TRACE] Ignoring 6-byte ${allSpaces ? "spaces" : "zeros"
             } artifact`,
           );
         }
@@ -441,8 +441,7 @@ class VMSession {
 
     if (ENABLE_DEBUG) {
       console.log(
-        `🔍 ARP ${
-          opcode === 1 ? "Request" : "Reply"
+        `🔍 ARP ${opcode === 1 ? "Request" : "Reply"
         }: ${senderIP} -> ${targetIP}`,
       );
     }
@@ -530,10 +529,10 @@ class VMSession {
       const proto = protocol === 6
         ? "TCP"
         : protocol === 17
-        ? "UDP"
-        : protocol === 1
-        ? "ICMP"
-        : protocol;
+          ? "UDP"
+          : protocol === 1
+            ? "ICMP"
+            : protocol;
       console.log(`📦 IPv4 ${proto}: ${srcIP} -> ${dstIP}`);
     }
 
@@ -645,7 +644,7 @@ class VMSession {
       socket.setNoDelay(true);
       try {
         socket.setKeepAlive(true, 30000);
-      } catch (_e) {}
+      } catch (_e) { }
 
       const isn = Math.floor(Math.random() * 0xFFFFFFFF);
       const actualWindow = window << windowScale;
@@ -809,13 +808,11 @@ class VMSession {
       if (allSpaces || allZeros) {
         if (ENABLE_DEBUG) {
           console.log(
-            `   🔍 6-byte packet: ${
-              allSpaces ? "all spaces (0x20)" : "all zeros"
+            `   🔍 6-byte packet: ${allSpaces ? "all spaces (0x20)" : "all zeros"
             }`,
           );
           console.log(
-            `   ⚠️ Ignoring VM TCP stack artifact (6-byte ${
-              allSpaces ? "spaces" : "zeros"
+            `   ⚠️ Ignoring VM TCP stack artifact (6-byte ${allSpaces ? "spaces" : "zeros"
             })`,
           );
         }
@@ -1510,7 +1507,7 @@ class VMSession {
     off += 4;
     dhcp[off++] = 6;
     dhcp[off++] = 4;
-    Buffer.from([8, 8, 8, 8]).copy(dhcp, off);
+    Buffer.from(DNS_SERVER_IP.split(".").map(Number)).copy(dhcp, off);
     off += 4;
     dhcp[off++] = 255;
 
@@ -1658,7 +1655,7 @@ console.log(
   `💡 VMs will be assigned IPs from 10.0.2.${DHCP_START} to 10.0.2.${DHCP_END}`,
 );
 console.log(`💡 Gateway: ${GATEWAY_IP}`);
-console.log(`💡 DNS: 8.8.8.8`);
+console.log(`💡 DNS: ${DNS_SERVER_IP}`);
 if (ENABLE_VM_TO_VM) {
   console.log(`💡 VMs can communicate with each other on the same network`);
 } else {
@@ -2000,8 +1997,7 @@ async function proxyRequest(req, res, rule) {
         console.log(`[PROXY] Sending response (${fullResponse.length} bytes)`);
         if (ENABLE_DEBUG) {
           console.log(
-            `[PROXY] First 400 bytes (hex): ${
-              fullResponse.slice(0, 400).toString("hex")
+            `[PROXY] First 400 bytes (hex): ${fullResponse.slice(0, 400).toString("hex")
             }`,
           );
         }

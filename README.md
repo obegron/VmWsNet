@@ -15,28 +15,34 @@ A WebSocket based VPN/proxy relay for virtual machines.
 
 ### 1. Installation
 
-This project requires Node.js. You also need to install the `ws` dependency.
+This project requires Node.js. You can install the dependencies using npm:
 
 ```bash
-npm install ws
+npm install
 ```
 
 ### 2. Generating SSL/TLS key pair (for WSS)
 
-For secure WebSockets (WSS), you need to generate a private key and a certificate. You can generate a self-signed pair using OpenSSL:
+For secure WebSockets (WSS), you need to generate a private key and a certificate. You can generate a self-signed pair using the following npm script:
+
+```bash
+npm run keygen
+```
+
+This will create `key.pem` and `cert.pem` in your project directory. When prompted, you can leave the fields for distinguished name blank.
+
+Alternatively, you can run the `openssl` command directly. This is useful if you want to use different settings:
 
 ```bash
 openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -nodes
 ```
-
-This will create `key.pem` and `cert.pem` in your project directory. When prompted, you can leave the fields for distinguished name blank.
 
 ### 3. Running the relay
 
 Once the dependencies are installed and you have your key pair (if using WSS), you can start the relay server:
 
 ```bash
-node relay.js
+npm start
 
 ```
 
