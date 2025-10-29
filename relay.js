@@ -5,7 +5,7 @@ const net = require("net");
 const ENABLE_WSS = true; // Set to false for WS
 const WS_PORT = ENABLE_WSS ? 8443 : 8086;
 const MAX_CONNECTIONS_PER_IP = 4;
-const ENABLE_DEBUG = true;
+const ENABLE_DEBUG = false;
 const ENABLE_VM_TO_VM = true; // Set to false to isolate VMs from each other
 const RATE_LIMIT_KBPS = 1024;
 const RATE_LIMIT_BPS = RATE_LIMIT_KBPS * 1024;
@@ -309,7 +309,8 @@ class VMSession {
       if (allSpaces || allZeros) {
         if (ENABLE_DEBUG) {
           console.log(
-            `[R-TRACE] Ignoring 6-byte ${allSpaces ? "spaces" : "zeros"
+            `[R-TRACE] Ignoring 6-byte ${
+              allSpaces ? "spaces" : "zeros"
             } artifact`,
           );
         }
@@ -334,7 +335,7 @@ class VMSession {
         });
         return;
       }
-      
+
       // Write to downstream and wait for it to drain before ACKing
       const canWrite = conn.downstream.write(payload);
       conn.vmSeq = (conn.vmSeq + payload.length) >>> 0;
@@ -440,7 +441,8 @@ class VMSession {
 
     if (ENABLE_DEBUG) {
       console.log(
-        `🔍 ARP ${opcode === 1 ? "Request" : "Reply"
+        `🔍 ARP ${
+          opcode === 1 ? "Request" : "Reply"
         }: ${senderIP} -> ${targetIP}`,
       );
     }
@@ -528,10 +530,10 @@ class VMSession {
       const proto = protocol === 6
         ? "TCP"
         : protocol === 17
-          ? "UDP"
-          : protocol === 1
-            ? "ICMP"
-            : protocol;
+        ? "UDP"
+        : protocol === 1
+        ? "ICMP"
+        : protocol;
       console.log(`📦 IPv4 ${proto}: ${srcIP} -> ${dstIP}`);
     }
 
@@ -643,7 +645,7 @@ class VMSession {
       socket.setNoDelay(true);
       try {
         socket.setKeepAlive(true, 30000);
-      } catch (_e) { }
+      } catch (_e) {}
 
       const isn = Math.floor(Math.random() * 0xFFFFFFFF);
       const actualWindow = window << windowScale;
@@ -807,11 +809,13 @@ class VMSession {
       if (allSpaces || allZeros) {
         if (ENABLE_DEBUG) {
           console.log(
-            `   🔍 6-byte packet: ${allSpaces ? "all spaces (0x20)" : "all zeros"
+            `   🔍 6-byte packet: ${
+              allSpaces ? "all spaces (0x20)" : "all zeros"
             }`,
           );
           console.log(
-            `   ⚠️ Ignoring VM TCP stack artifact (6-byte ${allSpaces ? "spaces" : "zeros"
+            `   ⚠️ Ignoring VM TCP stack artifact (6-byte ${
+              allSpaces ? "spaces" : "zeros"
             })`,
           );
         }
@@ -1996,7 +2000,8 @@ async function proxyRequest(req, res, rule) {
         console.log(`[PROXY] Sending response (${fullResponse.length} bytes)`);
         if (ENABLE_DEBUG) {
           console.log(
-            `[PROXY] First 400 bytes (hex): ${fullResponse.slice(0, 400).toString("hex")
+            `[PROXY] First 400 bytes (hex): ${
+              fullResponse.slice(0, 400).toString("hex")
             }`,
           );
         }
