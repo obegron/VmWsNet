@@ -127,18 +127,22 @@ if (ENABLE_WSS) {
 }
 
 console.log(
-  "\x1b[31m%s\x1b[0m",
+  "\x1b[33m%s\x1b[0m",
   `
-*******************************************************************
-*** SECURITY WARNING: DO NOT EXPOSE THIS PORT TO THE INTERNET!  ***
-***                                                             ***
-*** This relay provides a raw, unauthenticated network interface***
-*** to a virtual machine. Exposing it publicly will give anyone ***
-*** on the internet full network access to the VM and,          ***
-*** potentially, your local network.                            ***
-*******************************************************************
+═══════════════════════════════════════════════════════════════
+  ⚠️  SECURITY NOTICE
+═══════════════════════════════════════════════════════════════
+  
+  This relay provides network access to virtual machines.
+  
+  • Only expose this service to trusted networks
+  • Consider using firewall rules to restrict access
+  • Authentication is not built-in - add it if needed
+  
+═══════════════════════════════════════════════════════════════
 `,
 );
+
 
 console.log(`Rate limit: ${RATE_LIMIT_KBPS} KB/s`);
 console.log(`TCP Window: ${TCP_WINDOW_SIZE} bytes`);
