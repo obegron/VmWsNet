@@ -7,7 +7,7 @@ const WS_PORT = ENABLE_WSS ? 8443 : 8086;
 const MAX_CONNECTIONS_PER_IP = 4;
 const ENABLE_DEBUG = true;
 const ENABLE_VM_TO_VM = true; // Set to false to isolate VMs from each other
-const RATE_LIMIT_KBPS = 400;
+const RATE_LIMIT_KBPS = 1024;
 const RATE_LIMIT_BPS = RATE_LIMIT_KBPS * 1024;
 const TCP_WINDOW_SIZE = 1024 * 9; // Larger window for HTTP/2
 
@@ -773,20 +773,37 @@ class VMSession {
       const expected = conn.vmSeq;
       // SPECIAL CASE: Ignore suspicious 6-byte packets that appear after ACKs
       // v86 sometimes sends spurious 6-byte payloads that it doesn't track properly
-      if (
-        payload.length === 6 && conn.lastAckTime &&
-        (Date.now() - conn.lastAckTime < 100)
-      ) {
-        if (ENABLE_DEBUG) {
+
+      if (payload.length === 6) {
+        const allSpaces = payload.every((b) => b === 0x20); // ASCII space
+        const allZeros = payload.every((b) => b === 0);
+
+        if (ENABLE_DEBUG && (allSpaces || allZeros)) {
           console.log(
-            `   ⚠️ Ignoring suspicious 6-byte packet after recent ACK`,
+            `   🔍 6-byte packet: ${
+              allSpaces ? "all spaces (0x20)" : "all zeros"
+            }`,
           );
         }
-        // Send ACK but don't process the data
-        this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, dstIP, srcIP, {
-          ack: true,
-        });
-        return;
+
+        // Filter out these artifacts if they come right after an ACK
+        if (
+          (allSpaces || allZeros) && conn.lastAckTime &&
+          (Date.now() - conn.lastAckTime < 100)
+        ) {
+          if (ENABLE_DEBUG) {
+            console.log(
+              `   ⚠️ Ignoring VM TCP stack artifact (6-byte ${
+                allSpaces ? "spaces" : "zeros"
+              })`,
+            );
+          }
+          // Don't forward, don't update vmSeq, just ACK with current state
+          this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, dstIP, srcIP, {
+            ack: true,
+          });
+          return;
+        }
       }
 
       if (seqNum === expected) {
