@@ -769,43 +769,28 @@ class VMSession {
 
     if (conn.state !== "ESTABLISHED") return;
 
+    // Check for 6-byte TCP stack artifacts EARLY (before any other processing)
+    if (payload.length === 6) {
+      const allSpaces = payload.every(b => b === 0x20);
+      const allZeros = payload.every(b => b === 0);
+      
+      if (allSpaces || allZeros) {
+        if (ENABLE_DEBUG) {
+          console.log(`   🔍 6-byte packet: ${allSpaces ? 'all spaces (0x20)' : 'all zeros'}`);
+          console.log(`   ⚠️ Ignoring VM TCP stack artifact (6-byte ${allSpaces ? 'spaces' : 'zeros'})`);
+        }
+        // Don't forward, don't update vmSeq, just ACK with current state
+        this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, dstIP, srcIP, {
+          ack: true,
+        });
+        return; // ← Exit here, don't process FIN or anything else
+      }
+    }
+
+
     if (payload.length > 0) {
       const expected = conn.vmSeq;
-      // SPECIAL CASE: Ignore suspicious 6-byte packets that appear after ACKs
-      // v86 sometimes sends spurious 6-byte payloads that it doesn't track properly
-
-      if (payload.length === 6) {
-        const allSpaces = payload.every((b) => b === 0x20); // ASCII space
-        const allZeros = payload.every((b) => b === 0);
-
-        if (ENABLE_DEBUG && (allSpaces || allZeros)) {
-          console.log(
-            `   🔍 6-byte packet: ${
-              allSpaces ? "all spaces (0x20)" : "all zeros"
-            }`,
-          );
-        }
-
-        // Filter out these artifacts if they come right after an ACK
-        if (
-          (allSpaces || allZeros) && conn.lastAckTime &&
-          (Date.now() - conn.lastAckTime < 100)
-        ) {
-          if (ENABLE_DEBUG) {
-            console.log(
-              `   ⚠️ Ignoring VM TCP stack artifact (6-byte ${
-                allSpaces ? "spaces" : "zeros"
-              })`,
-            );
-          }
-          // Don't forward, don't update vmSeq, just ACK with current state
-          this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, dstIP, srcIP, {
-            ack: true,
-          });
-          return;
-        }
-      }
-
+      
       if (seqNum === expected) {
         // Perfect - expected sequence
         conn.vmSeq = (seqNum + payload.length) >>> 0;
