@@ -79,6 +79,21 @@ if (ENABLE_WSS) {
   });
   console.log(`WebSocket VPN server listening on port ${WS_PORT}`);
 }
+
+console.log(
+  "\x1b[31m%s\x1b[0m",
+  `
+*******************************************************************
+*** SECURITY WARNING: DO NOT EXPOSE THIS PORT TO THE INTERNET!  ***
+***                                                             ***
+*** This relay provides a raw, unauthenticated network interface***
+*** to a virtual machine. Exposing it publicly will give anyone ***
+*** on the internet full network access to the VM and,          ***
+*** potentially, your local network.                            ***
+*******************************************************************
+`,
+);
+
 console.log(`Rate limit: ${RATE_LIMIT_KBPS} KB/s`);
 console.log(`TCP Window: ${TCP_WINDOW_SIZE} bytes`);
 console.log(`DHCP Pool: 10.0.2.${DHCP_START} - 10.0.2.${DHCP_END}`);
@@ -200,58 +215,112 @@ class VMSession {
 
   handleReverseTCP(ipPacket) {
     const ihl = (ipPacket[0] & 0x0f) * 4;
+
     if (ipPacket.length < ihl + 20) return;
 
     const srcIP = Array.from(ipPacket.slice(12, 16)).join(".");
     const dstIP = Array.from(ipPacket.slice(16, 20)).join(".");
     const srcPort = ipPacket.readUInt16BE(ihl);
+
     const dstPort = ipPacket.readUInt16BE(ihl + 2);
+
     const seqNum = ipPacket.readUInt32BE(ihl + 4);
+
     const ackNum = ipPacket.readUInt32BE(ihl + 8);
+
     const flags = ipPacket[ihl + 13];
+
     const dataOffset = (ipPacket[ihl + 12] >> 4) * 4;
 
     const SYN = (flags & 0x02) !== 0;
+
     const ACK = (flags & 0x10) !== 0;
+
     const FIN = (flags & 0x01) !== 0;
+
     const RST = (flags & 0x04) !== 0;
 
+    const payload = ipPacket.slice(ihl + dataOffset);
+
+    if (ENABLE_DEBUG) {
+      const f = [
+        SYN ? "SYN" : "",
+
+        ACK ? "ACK" : "",
+
+        FIN ? "FIN" : "",
+
+        RST ? "RST" : "",
+      ].filter((x) => x).join(",");
+
+      console.log(
+        `[R-TRACE] RECV [${f}] seq=${seqNum} ack=${ackNum} len=${payload.length}`,
+      );
+
+      const conn = this.reverseTcpConnections.get(dstPort);
+
+      if (conn) {
+        console.log(
+          `          STATE: vmSeq=${conn.vmSeq} relaySeq=${conn.relaySeq}`,
+        );
+      }
+    }
+
     const connKey = dstPort;
+
     const conn = this.reverseTcpConnections.get(connKey);
 
     if (!conn) {
       if (this.recentlyClosed.has(connKey)) {
         return;
       }
+
       if (!RST && ENABLE_DEBUG) {
         console.log(
           `[REVERSE TCP] No connection for port ${connKey}, sending RST`,
         );
       }
+
       if (!RST) {
         this.sendRSTForReverse(srcPort, dstPort, srcIP, dstIP, ackNum);
       }
+
       return;
     }
 
     if (conn.state === "SYN_SENT" && SYN && ACK) {
       conn.state = "ESTABLISHED";
+
       conn.vmSeq = (seqNum + 1) >>> 0;
+
       this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, srcIP, dstIP, {
         ack: true,
       });
+
       if (conn.onConnected) {
         conn.onConnected();
       }
+
       return;
     }
 
     if (conn.state !== "ESTABLISHED") return;
 
-    const payload = ipPacket.slice(ihl + dataOffset);
     if (payload.length > 0) {
+      // v86 sometimes sends a 6-byte payload with ACKs that should be ignored.
+
+      if (payload.length === 6 && payload.readUInt32BE(0) === 0) {
+        if (ENABLE_DEBUG) {
+          console.log(`[R-TRACE] Ignoring 6-byte garbage payload.`);
+        }
+
+        return;
+      }
+
       conn.downstream.write(payload);
+
       conn.vmSeq = (conn.vmSeq + payload.length) >>> 0;
+
       this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, srcIP, dstIP, {
         ack: true,
       });
@@ -261,16 +330,21 @@ class VMSession {
       console.log(
         `[REVERSE TCP] [${this.vmIP}] FIN received, closing connection ${connKey}`,
       );
+
       conn.state = "CLOSED";
+
       conn.downstream.end();
+
       this.reverseTcpConnections.delete(connKey);
 
       // Send final ACK for the FIN
+
       this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, srcIP, dstIP, {
         ack: true,
       });
 
       this.recentlyClosed.add(connKey);
+
       setTimeout(() => {
         this.recentlyClosed.delete(connKey);
       }, 2000); // Reduced from 5000ms
@@ -340,7 +414,7 @@ class VMSession {
 
     if (ENABLE_DEBUG) {
       console.log(
-        `🔍 ARP ${ 
+        `🔍 ARP ${
           opcode === 1 ? "Request" : "Reply"
         }: ${senderIP} -> ${targetIP}`,
       );
@@ -574,7 +648,12 @@ class VMSession {
           );
         }
         c.sendQueue.push(data);
-        this.trySendToVM(connKey, { dstPort, srcPort, dstIP, srcIP });
+        this.trySendToVM(connKey, {
+          dstPort,
+          srcPort,
+          dstIP,
+          srcIP,
+        });
       });
 
       socket.on("end", () => {
@@ -645,7 +724,12 @@ class VMSession {
           clearTimeout(conn.retransmitTimeout);
           conn.retransmitTimeout = null;
         }
-        this.trySendToVM(connKey, { dstPort, srcPort, dstIP, srcIP });
+        this.trySendToVM(connKey, {
+          dstPort,
+          srcPort,
+          dstIP,
+          srcIP,
+        });
       } else if (acked === 0 && conn.inFlight.length > 0) {
         conn.dupAckCount = (conn.dupAckCount || 0) + 1;
         if (ENABLE_DEBUG) {
@@ -653,7 +737,12 @@ class VMSession {
         }
         if (conn.dupAckCount === 3) {
           if (ENABLE_DEBUG) console.log(`   ⚡ Fast retransmit triggered`);
-          this.retransmitFirst(connKey, { dstPort, srcPort, dstIP, srcIP });
+          this.retransmitFirst(connKey, {
+            dstPort,
+            srcPort,
+            dstIP,
+            srcIP,
+          });
           conn.dupAckCount = 0;
         }
       }
@@ -703,7 +792,7 @@ class VMSession {
         // Update vmSeq to skip over these bytes since we already handled them
         conn.vmSeq = (seqNum + payload.length) >>> 0;
         delete conn.handshakeDataLength;
-        
+
         // Send ACK to confirm (v86 expects this)
         this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, dstIP, srcIP, {
           ack: true,
@@ -773,7 +862,12 @@ class VMSession {
     const conn = this.tcpConnections.get(connKey);
     if (!conn || conn.inFlight.length === 0) return;
 
-    const { dstPort, srcPort, dstIP, srcIP } = info;
+    const {
+      dstPort,
+      srcPort,
+      dstIP,
+      srcIP,
+    } = info;
     const segment = conn.inFlight[0];
 
     if (ENABLE_DEBUG) {
@@ -806,7 +900,12 @@ class VMSession {
 
     conn.sending = true;
 
-    const { dstPort, srcPort, dstIP, srcIP } = info;
+    const {
+      dstPort,
+      srcPort,
+      dstIP,
+      srcIP,
+    } = info;
     const MSS = 1460;
 
     const sendNext = () => {
@@ -909,7 +1008,13 @@ class VMSession {
   }
 
   sendTCP(conn, payload, srcPort, dstPort, srcIP, dstIP, flags = {}) {
-    const { fin, rst, ack, psh, syn } = flags;
+    const {
+      fin,
+      rst,
+      ack,
+      psh,
+      syn,
+    } = flags;
     const tcpLen = 20 + payload.length;
     const tcp = Buffer.alloc(tcpLen);
 
@@ -1414,7 +1519,9 @@ class VMSession {
 
   sendToVM(data, callback) {
     if (this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(data, { binary: true }, (err) => {
+      this.ws.send(data, {
+        binary: true,
+      }, (err) => {
         if (err && ENABLE_DEBUG) {
           console.log(`   ❌ Error sending to VM: ${err.message}`);
         }
@@ -1533,12 +1640,107 @@ if (ENABLE_VM_TO_VM) {
 
 const http = require("http");
 const fs = require("fs");
+const path = require("path");
 
 // Admin server
 const ADMIN_PORT = 8001;
 let nextRuleId = 1;
 const proxyRules = [];
 let nextProxyPort = 30000;
+const runningTcpProxies = new Map();
+
+function stopTcpProxy(ruleId) {
+  if (runningTcpProxies.has(ruleId)) {
+    if (ENABLE_DEBUG) {
+      console.log(`[TCP PROXY] Stopping proxy for rule ${ruleId}`);
+    }
+    const server = runningTcpProxies.get(ruleId);
+    server.close();
+    runningTcpProxies.delete(ruleId);
+  }
+}
+
+async function startTcpProxy(rule) {
+  if (runningTcpProxies.has(rule.id)) {
+    console.log(`[TCP PROXY] Proxy for rule ${rule.id} already running.`);
+    return;
+  }
+
+  if (ENABLE_DEBUG) {
+    console.log(
+      `[TCP PROXY] Starting proxy for rule ${rule.id}: host port ${rule.host_port} -> ${rule.vm}:${rule.port}`,
+    );
+  }
+
+  const server = net.createServer(async (localSocket) => {
+    const targetSession = ipToSession.get(rule.vm);
+    if (!targetSession) {
+      console.log(
+        `[TCP PROXY] VM ${rule.vm} not connected for incoming connection on port ${rule.host_port}`,
+      );
+      localSocket.end();
+      return;
+    }
+
+    console.log(
+      `[TCP PROXY] Incoming connection on port ${rule.host_port}, connecting to VM ${rule.vm}:${rule.port}`,
+    );
+
+    try {
+      const {
+        upstream,
+        downstream,
+        connKey,
+      } = await targetSession
+        .createTCPConnection(rule.port);
+      console.log(
+        `[TCP PROXY] Connection to VM established (key: ${connKey}). Piping data.`,
+      );
+
+      // Pipe data between the local client and the VM
+      localSocket.pipe(upstream);
+      downstream.pipe(localSocket);
+
+      localSocket.on("close", () => {
+        console.log(
+          `[TCP PROXY] Local client disconnected from port ${rule.host_port}`,
+        );
+        downstream.unpipe(localSocket);
+        targetSession.reverseTcpConnections.delete(connKey);
+      });
+
+      localSocket.on("error", (err) => {
+        console.error(`[TCP PROXY] Local client socket error: ${err.message}`);
+      });
+
+      downstream.on("error", (err) => {
+        console.error(`[TCP PROXY] VM downstream error: ${err.message}`);
+        localSocket.destroy();
+      });
+
+      upstream.on("error", (err) => {
+        console.error(`[TCP PROXY] VM upstream error: ${err.message}`);
+        localSocket.destroy();
+      });
+    } catch (err) {
+      console.error(
+        `[TCP PROXY] Failed to create TCP connection to VM: ${err.message}`,
+      );
+      localSocket.end();
+    }
+  });
+
+  server.listen(rule.host_port, () => {
+    console.log(`[TCP PROXY] Server listening on port ${rule.host_port}`);
+    runningTcpProxies.set(rule.id, server);
+  });
+
+  server.on("error", (err) => {
+    console.error(
+      `[TCP PROXY] Server error on port ${rule.host_port}: ${err.message}`,
+    );
+  });
+}
 
 const adminServer = http.createServer((req, res) => {
   if (req.url === "/") {
@@ -1548,7 +1750,9 @@ const adminServer = http.createServer((req, res) => {
         res.end("Error loading admin.html");
         return;
       }
-      res.writeHead(200, { "Content-Type": "text/html" });
+      res.writeHead(200, {
+        "Content-Type": "text/html",
+      });
       res.end(data);
     });
   } else if (req.url === "/api/sessions") {
@@ -1561,12 +1765,35 @@ const adminServer = http.createServer((req, res) => {
         vmMAC: session.vmMAC,
         bytesSent: session.bytesSent,
         bytesReceived: session.bytesReceived,
+        nickname: session.nickname,
       });
     });
-    res.writeHead(200, { "Content-Type": "application/json" });
+    res.writeHead(200, {
+      "Content-Type": "application/json",
+    });
     res.end(JSON.stringify(sessions));
+  } else if (req.url.match(/\/api\/sessions\/(.+)\/nickname/) && req.method === "POST") {
+    const sessionId = req.url.match(/\/api\/sessions\/(.+)\/nickname/)[1];
+    const session = activeSessions.get(sessionId);
+    if (session) {
+      let body = "";
+      req.on("data", (chunk) => {
+        body += chunk.toString();
+      });
+      req.on("end", () => {
+        const { nickname } = JSON.parse(body);
+        session.nickname = nickname;
+        res.writeHead(200);
+        res.end();
+      });
+    } else {
+      res.writeHead(404);
+      res.end();
+    }
   } else if (req.url === "/api/rules" && req.method === "GET") {
-    res.writeHead(200, { "Content-Type": "application/json" });
+    res.writeHead(200, {
+      "Content-Type": "application/json",
+    });
     res.end(JSON.stringify(proxyRules));
   } else if (req.url === "/api/rules" && req.method === "POST") {
     let body = "";
@@ -1577,6 +1804,9 @@ const adminServer = http.createServer((req, res) => {
       const rule = JSON.parse(body);
       rule.id = nextRuleId++;
       proxyRules.push(rule);
+      if (rule.type === "tcp") {
+        startTcpProxy(rule);
+      }
       res.writeHead(201);
       res.end();
     });
@@ -1584,6 +1814,10 @@ const adminServer = http.createServer((req, res) => {
     const id = parseInt(req.url.split("/")[3]);
     const index = proxyRules.findIndex((rule) => rule.id === id);
     if (index !== -1) {
+      const rule = proxyRules[index];
+      if (rule.type === "tcp") {
+        stopTcpProxy(rule.id);
+      }
       proxyRules.splice(index, 1);
       res.writeHead(204);
       res.end();
@@ -1606,15 +1840,30 @@ const PROXY_PORT = 8080;
 
 function findProxyRule(req) {
   const host = req.headers.host;
-  const path = req.url;
+  const urlPath = req.url;
 
-  // VHost rule
-  let rule = proxyRules.find((r) => r.type === "vhost" && r.value === host);
-  if (rule) return rule;
+  let bestMatch = null;
+  let bestMatchScore = -1;
 
-  // Path rule
-  rule = proxyRules.find((r) => r.type === "path" && path.startsWith(r.value));
-  return rule;
+  for (const rule of proxyRules) {
+    if (rule.type !== 'http') continue;
+
+    const vhostMatches = !rule.vhost || rule.vhost === host;
+    const pathMatches = urlPath.startsWith(rule.path);
+
+    if (vhostMatches && pathMatches) {
+      let score = 0;
+      if (rule.vhost) score += 1000; // vhost match is much better
+      score += rule.path.length; // longer path is better
+
+      if (score > bestMatchScore) {
+        bestMatch = rule;
+        bestMatchScore = score;
+      }
+    }
+  }
+
+  return bestMatch;
 }
 
 async function proxyRequest(req, res, rule) {
@@ -1624,24 +1873,27 @@ async function proxyRequest(req, res, rule) {
 
   const targetSession = ipToSession.get(rule.vm);
   if (!targetSession) {
-    res.writeHead(502, { "Content-Type": "text/plain" });
+    res.writeHead(502, {
+      "Content-Type": "text/plain",
+    });
     res.end("Bad Gateway: VM not connected");
     return;
   }
 
   try {
     console.log(`[PROXY] Creating TCP connection to ${rule.vm}:${rule.port}`);
-    const { upstream, downstream, connKey } = await targetSession
+    const {
+      upstream,
+      downstream,
+      connKey,
+    } = await targetSession
       .createTCPConnection(rule.port);
     console.log(`[PROXY] TCP connection established with key ${connKey}`);
 
     let url = req.url;
     if (rule.targetPath) {
-      if (rule.type === "path") {
-        url = rule.targetPath + req.url.substring(rule.value.length);
-      } else {
-        url = rule.targetPath + req.url;
-      }
+      const remainingPath = req.url.substring(rule.path.length);
+      url = path.join(rule.targetPath, remainingPath);
     }
 
     const headers = [`${req.method} ${url} HTTP/1.1`];
@@ -1659,7 +1911,9 @@ async function proxyRequest(req, res, rule) {
     headers.push(""); // This creates \r\n\r\n when joined
 
     const requestData = headers.join("\r\n");
-    console.log( `[PROXY] Sending request (${requestData.length} bytes): ${requestData}`);
+    console.log(
+      `[PROXY] Sending request (${requestData.length} bytes): ${requestData}`,
+    );
 
     // Send request and ensure it's flushed
     console.log(`[PROXY] Writing ${requestData.length} bytes to upstream...`);
@@ -1689,7 +1943,9 @@ async function proxyRequest(req, res, rule) {
       }, 5000);
 
       if (!res.headersSent) {
-        res.writeHead(504, { "Content-Type": "text/plain" });
+        res.writeHead(504, {
+          "Content-Type": "text/plain",
+        });
         res.end("Gateway Timeout");
       }
       upstream.destroy();
@@ -1713,7 +1969,9 @@ async function proxyRequest(req, res, rule) {
         console.log(`[PROXY] Sending response (${fullResponse.length} bytes)`);
         if (ENABLE_DEBUG) {
           console.log(
-            `[PROXY] First 400 bytes (hex): ${fullResponse.slice(0, 400).toString("hex")}`,
+            `[PROXY] First 400 bytes (hex): ${
+              fullResponse.slice(0, 400).toString("hex")
+            }`,
           );
         }
 
@@ -1722,7 +1980,9 @@ async function proxyRequest(req, res, rule) {
         res.socket.end();
       } else {
         console.log(`[PROXY] ⚠️ No data received from VM!`);
-        res.writeHead(502, { "Content-Type": "text/plain" });
+        res.writeHead(502, {
+          "Content-Type": "text/plain",
+        });
         res.end("Bad Gateway: No response from VM");
       }
     });
@@ -1741,7 +2001,9 @@ async function proxyRequest(req, res, rule) {
     upstream.on("error", (err) => {
       console.error("[PROXY] Upstream error:", err);
       if (!res.headersSent) {
-        res.writeHead(502, { "Content-Type": "text/plain" });
+        res.writeHead(502, {
+          "Content-Type": "text/plain",
+        });
         res.end("Bad Gateway");
       }
     });
@@ -1749,13 +2011,17 @@ async function proxyRequest(req, res, rule) {
     downstream.on("error", (err) => {
       console.error("[PROXY] Downstream error:", err);
       if (!res.headersSent) {
-        res.writeHead(502, { "Content-Type": "text/plain" });
+        res.writeHead(502, {
+          "Content-Type": "text/plain",
+        });
         res.end("Bad Gateway");
       }
     });
   } catch (err) {
     console.error("[PROXY] Error creating TCP connection:", err);
-    res.writeHead(502, { "Content-Type": "text/plain" });
+    res.writeHead(502, {
+      "Content-Type": "text/plain",
+    });
     res.end("Bad Gateway: Could not connect to VM");
   }
 }
@@ -1765,7 +2031,9 @@ const proxyServer = http.createServer((req, res) => {
   if (rule) {
     proxyRequest(req, res, rule);
   } else {
-    res.writeHead(404, { "Content-Type": "text/plain" });
+    res.writeHead(404, {
+      "Content-Type": "text/plain",
+    });
     res.end("No proxy rule found.");
   }
 });
@@ -1773,3 +2041,4 @@ const proxyServer = http.createServer((req, res) => {
 proxyServer.listen(PROXY_PORT, () => {
   console.log(`💡 Proxy server listening on port ${PROXY_PORT}`);
 });
+
