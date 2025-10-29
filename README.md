@@ -1,4 +1,4 @@
-# VmWsNet
+# RootlessRelay
 
 A WebSocket based VPN/proxy relay for virtual machines.
 
