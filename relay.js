@@ -754,53 +754,39 @@ class VMSession {
     const payloadOffset = ihl + dataOffset;
     const payload = ipPacket.slice(payloadOffset);
 
-    // Track if we just established the connection
-    let justEstablished = false;
-
     if (conn.state === "SYN_SENT" && ACK) {
       conn.state = "ESTABLISHED";
-      justEstablished = true;
       if (ENABLE_DEBUG) console.log(`   🤝 Connection established: ${connKey}`);
 
-      // v86 sends data in handshake but will retransmit it - ignore for now
-      if (payload.length > 0) {
-        if (ENABLE_DEBUG) {
-          console.log(
-            `   ℹ️ Ignoring ${payload.length} bytes in handshake (v86 will retransmit)`,
-          );
-        }
-        // Track that we need to skip these bytes when they arrive again
-        conn.handshakeDataLength = payload.length;
-        // Send ACK to prevent v86 from retransmitting later
-        this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, dstIP, srcIP, {
-          ack: true,
-        });
-      }
+      // Always ACK the handshake, but ignore any piggybacked data
+      this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, dstIP, srcIP, {
+        ack: true,
+      });
+
+      // Don't process payload here - v86 will retransmit it cleanly
+      return;
     }
 
-    // Only process sequence numbers if there's actual data AND we didn't just establish
-    if (payload.length > 0 && !justEstablished) {
-      const expected = conn.vmSeq;
+    if (conn.state !== "ESTABLISHED") return;
 
+    if (payload.length > 0) {
+      const expected = conn.vmSeq;
+      // SPECIAL CASE: Ignore suspicious 6-byte packets that appear after ACKs
+      // v86 sometimes sends spurious 6-byte payloads that it doesn't track properly
       if (
-        conn.handshakeDataLength &&
-        payload.length === conn.handshakeDataLength &&
-        (seqNum === expected || seqNum === expected - conn.handshakeDataLength)
+        payload.length === 6 && conn.lastAckTime &&
+        (Date.now() - conn.lastAckTime < 100)
       ) {
         if (ENABLE_DEBUG) {
           console.log(
-            `   🔄 Skipping duplicate handshake data (${payload.length} bytes)`,
+            `   ⚠️ Ignoring suspicious 6-byte packet after recent ACK`,
           );
         }
-        // Update vmSeq to skip over these bytes since we already handled them
-        conn.vmSeq = (seqNum + payload.length) >>> 0;
-        delete conn.handshakeDataLength;
-
-        // Send ACK to confirm (v86 expects this)
+        // Send ACK but don't process the data
         this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, dstIP, srcIP, {
           ack: true,
         });
-        return; // Don't forward the data
+        return;
       }
 
       if (seqNum === expected) {
@@ -827,11 +813,16 @@ class VMSession {
       if (conn.socket && conn.socket.writable) {
         if (ENABLE_DEBUG) {
           console.log(
-            `    Forwarding ${payload.length} bytes to ${dstIP}:${dstPort}`,
+            `   📤 Forwarding ${payload.length} bytes to ${dstIP}:${dstPort}`,
           );
         }
         conn.socket.write(payload);
       }
+
+      // ACK after processing
+      this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, dstIP, srcIP, {
+        ack: true,
+      });
     }
 
     if (FIN) {
