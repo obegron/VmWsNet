@@ -769,6 +769,15 @@ class VMSession {
 
     if (conn.state !== "ESTABLISHED") return;
 
+    if (RST) {
+      if (ENABLE_DEBUG) console.log(`   🛑 RST received, closing connection`);
+      if (conn.socket) conn.socket.destroy();
+      if (conn.retransmitTimeout) clearTimeout(conn.retransmitTimeout);
+      this.tcpConnections.delete(connKey);
+      return; // Exit immediately, don't process anything else
+    }
+
+
     // Check for 6-byte TCP stack artifacts EARLY (before any other processing)
     if (payload.length === 6) {
       const allSpaces = payload.every(b => b === 0x20);
@@ -847,11 +856,6 @@ class VMSession {
       return;
     }
 
-    if (RST) {
-      if (conn.socket) conn.socket.destroy();
-      if (conn.retransmitTimeout) clearTimeout(conn.retransmitTimeout);
-      this.tcpConnections.delete(connKey);
-    }
   }
 
   retransmitFirst(connKey, info) {
