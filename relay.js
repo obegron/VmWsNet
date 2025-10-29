@@ -2,20 +2,65 @@ const WebSocket = require("ws");
 const dgram = require("dgram");
 const net = require("net");
 
-const ENABLE_WSS = true; // Set to false for WS
-const WS_PORT = ENABLE_WSS ? 8443 : 8086;
-const MAX_CONNECTIONS_PER_IP = 4;
+// ==============================================================================
+// CONFIGURATION
+// All user-configurable settings are located in this section.
+// ==============================================================================
+
+// --- Basic Settings ---
+// ==============================================================================
+
+// ENABLE_DEBUG: Set to true to enable verbose debug logging to the console.
 const ENABLE_DEBUG = false;
-const ENABLE_VM_TO_VM = true; // Set to false to isolate VMs from each other
+
+// RATE_LIMIT_KBPS: The maximum upload and download bandwidth for each VM in kilobytes per second.
 const RATE_LIMIT_KBPS = 1024;
-const RATE_LIMIT_BPS = RATE_LIMIT_KBPS * 1024;
-const TCP_WINDOW_SIZE = 1024 * 10; // Larger window for HTTP/2
+
+// MAX_CONNECTIONS_PER_IP: The maximum number of concurrent WebSocket connections allowed from a single IP address.
+const MAX_CONNECTIONS_PER_IP = 4;
+
+// ENABLE_WSS: Set to true to use Secure WebSockets (WSS), false for standard WebSockets (WS).
+// Requires cert.pem and key.pem files to be present if true.
+const ENABLE_WSS = true;
+
+// ENABLE_VM_TO_VM: Set to true to allow virtual machines on the same relay to communicate with each other.
+// If false, VMs are isolated and can only access the gateway/internet.
+const ENABLE_VM_TO_VM = true;
+
+// --- Advanced Settings ---
+// ==============================================================================
+
+// GATEWAY_IP: The IP address of the virtual gateway within the VM's network.
+const GATEWAY_IP = "10.0.2.2";
+
+// DHCP_START: The starting IP address for the DHCP pool (the last octet).
+const DHCP_START = 15; // Assigns IPs from 10.0.2.15
+
+// DHCP_END: The ending IP address for the DHCP pool (the last octet).
+const DHCP_END = 254; // Assigns IPs up to 10.0.2.254
+
+// DNS_SERVER_IP: The IP address of the DNS server provided to the VMs via DHCP.
 const DNS_SERVER_IP = "8.8.8.8";
 
-// IP allocation for VMs
-const GATEWAY_IP = "10.0.2.2";
-const DHCP_START = 15; // Start assigning IPs from 10.0.2.15
-const DHCP_END = 254; // End at 10.0.2.254
+// TCP_WINDOW_SIZE: The TCP window size used for connections to and from the VM.
+// A larger size may improve performance for high-latency connections.
+const TCP_WINDOW_SIZE = 1024 * 10;
+
+// WS_PORT: The port on which the WebSocket server will listen.
+// Defaults to 8443 for WSS and 8086 for WS.
+const WS_PORT = ENABLE_WSS ? 8443 : 8086;
+
+// ADMIN_PORT: The port for the web-based admin interface.
+const ADMIN_PORT = 8001;
+
+// PROXY_PORT: The port for the HTTP reverse proxy server.
+const PROXY_PORT = 8080;
+
+// ==============================================================================
+// END OF CONFIGURATION
+// ==============================================================================
+
+const RATE_LIMIT_BPS = RATE_LIMIT_KBPS * 1024;
 
 const connectionsPerIP = new Map();
 const activeSessions = new Map();
@@ -310,7 +355,8 @@ class VMSession {
       if (allSpaces || allZeros) {
         if (ENABLE_DEBUG) {
           console.log(
-            `[R-TRACE] Ignoring 6-byte ${allSpaces ? "spaces" : "zeros"
+            `[R-TRACE] Ignoring 6-byte ${
+              allSpaces ? "spaces" : "zeros"
             } artifact`,
           );
         }
@@ -441,7 +487,8 @@ class VMSession {
 
     if (ENABLE_DEBUG) {
       console.log(
-        `🔍 ARP ${opcode === 1 ? "Request" : "Reply"
+        `🔍 ARP ${
+          opcode === 1 ? "Request" : "Reply"
         }: ${senderIP} -> ${targetIP}`,
       );
     }
@@ -529,10 +576,10 @@ class VMSession {
       const proto = protocol === 6
         ? "TCP"
         : protocol === 17
-          ? "UDP"
-          : protocol === 1
-            ? "ICMP"
-            : protocol;
+        ? "UDP"
+        : protocol === 1
+        ? "ICMP"
+        : protocol;
       console.log(`📦 IPv4 ${proto}: ${srcIP} -> ${dstIP}`);
     }
 
@@ -644,7 +691,7 @@ class VMSession {
       socket.setNoDelay(true);
       try {
         socket.setKeepAlive(true, 30000);
-      } catch (_e) { }
+      } catch (_e) {}
 
       const isn = Math.floor(Math.random() * 0xFFFFFFFF);
       const actualWindow = window << windowScale;
@@ -808,11 +855,13 @@ class VMSession {
       if (allSpaces || allZeros) {
         if (ENABLE_DEBUG) {
           console.log(
-            `   🔍 6-byte packet: ${allSpaces ? "all spaces (0x20)" : "all zeros"
+            `   🔍 6-byte packet: ${
+              allSpaces ? "all spaces (0x20)" : "all zeros"
             }`,
           );
           console.log(
-            `   ⚠️ Ignoring VM TCP stack artifact (6-byte ${allSpaces ? "spaces" : "zeros"
+            `   ⚠️ Ignoring VM TCP stack artifact (6-byte ${
+              allSpaces ? "spaces" : "zeros"
             })`,
           );
         }
@@ -1669,7 +1718,6 @@ const fs = require("fs");
 const path = require("path");
 
 // Admin server
-const ADMIN_PORT = 8001;
 let nextRuleId = 1;
 const proxyRules = [];
 let nextProxyPort = 30000;
@@ -1863,9 +1911,6 @@ adminServer.listen(ADMIN_PORT, () => {
   console.log(`💡 Admin UI listening on port ${ADMIN_PORT}`);
 });
 
-// Proxy server
-const PROXY_PORT = 8080;
-
 function findProxyRule(req) {
   const host = req.headers.host;
   const urlPath = req.url;
@@ -1997,7 +2042,8 @@ async function proxyRequest(req, res, rule) {
         console.log(`[PROXY] Sending response (${fullResponse.length} bytes)`);
         if (ENABLE_DEBUG) {
           console.log(
-            `[PROXY] First 400 bytes (hex): ${fullResponse.slice(0, 400).toString("hex")
+            `[PROXY] First 400 bytes (hex): ${
+              fullResponse.slice(0, 400).toString("hex")
             }`,
           );
         }

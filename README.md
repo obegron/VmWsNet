@@ -11,6 +11,33 @@ A WebSocket based VPN/proxy relay for virtual machines.
 - **HTTP Proxying:** Reverse proxy functionality to expose services from VMs to the host network.
 - **Rate Limiting:** Configurable bandwidth limits for each connected VM.
 
+## Configuration
+
+All configuration is done by editing the constants at the top of the `relay.js` file.
+
+### Basic Settings
+
+| Setting                  | Purpose                                                                | Default |
+| ------------------------ | ---------------------------------------------------------------------- | ------- |
+| `ENABLE_DEBUG`           | Enable verbose debug logging to the console.                           | `false` |
+| `RATE_LIMIT_KBPS`        | Maximum upload/download bandwidth for each VM in kilobytes per second. | `1024`  |
+| `MAX_CONNECTIONS_PER_IP` | Maximum number of concurrent WebSocket connections from a single IP.   | `4`     |
+| `ENABLE_WSS`             | Use Secure WebSockets (WSS). Requires `cert.pem` and `key.pem`.        | `true`  |
+| `ENABLE_VM_TO_VM`        | Allow VMs on the same relay to communicate with each other.            | `true`  |
+
+### Advanced Settings
+
+| Setting           | Purpose                                                    | Default                    |
+| ----------------- | ---------------------------------------------------------- | -------------------------- |
+| `GATEWAY_IP`      | IP address of the virtual gateway within the VM's network. | `10.0.2.2`                 |
+| `DHCP_START`      | The starting IP address for the DHCP pool (last octet).    | `15`                       |
+| `DHCP_END`        | The ending IP address for the DHCP pool (last octet).      | `254`                      |
+| `DNS_SERVER_IP`   | DNS server provided to VMs via DHCP.                       | `8.8.8.8`                  |
+| `TCP_WINDOW_SIZE` | TCP window size for connections to/from the VM.            | `10240`                    |
+| `WS_PORT`         | Port for the WebSocket server.                             | `8443` (WSS) / `8086` (WS) |
+| `ADMIN_PORT`      | Port for the web-based admin interface.                    | `8001`                     |
+| `PROXY_PORT`      | Port for the HTTP reverse proxy server.                    | `8080`                     |
+
 ## How to use
 
 ### 1. Installation

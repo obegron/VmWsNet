@@ -1,0 +1,34 @@
+{
+  "name": "rootlessrelay",
+  "version": "0.5.6",
+  "description": "A WebSocket based VPN/proxy relay for virtual machines.",
+  "main": "relay.js",
+  "scripts": {
+    "start": "node relay.js",
+    "keygen": "openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -nodes",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/obegron/rootlessRelay.git"
+  },
+  "keywords": [
+    "websocket",
+    "vpn",
+    "proxy",
+    "relay",
+    "vm",
+    "virtual-machine",
+    "network"
+  ],
+  "author": "obegron",
+  "license": "MIT",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/obegron/rootlessRelay/issues"
+  },
+  "homepage": "https://github.com/obegron/rootlessRelay#readme",
+  "dependencies": {
+    "ws": "^8.17.0"
+  }
+}
