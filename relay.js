@@ -221,25 +221,15 @@ class VMSession {
     const srcIP = Array.from(ipPacket.slice(12, 16)).join(".");
     const dstIP = Array.from(ipPacket.slice(16, 20)).join(".");
     const srcPort = ipPacket.readUInt16BE(ihl);
-
     const dstPort = ipPacket.readUInt16BE(ihl + 2);
-
     const seqNum = ipPacket.readUInt32BE(ihl + 4);
-
     const ackNum = ipPacket.readUInt32BE(ihl + 8);
-
     const flags = ipPacket[ihl + 13];
-
     const dataOffset = (ipPacket[ihl + 12] >> 4) * 4;
-
     const SYN = (flags & 0x02) !== 0;
-
     const ACK = (flags & 0x10) !== 0;
-
     const FIN = (flags & 0x01) !== 0;
-
     const RST = (flags & 0x04) !== 0;
-
     const payload = ipPacket.slice(ihl + dataOffset);
 
     if (ENABLE_DEBUG) {
@@ -267,30 +257,25 @@ class VMSession {
     }
 
     const connKey = dstPort;
-
     const conn = this.reverseTcpConnections.get(connKey);
 
     if (!conn) {
       if (this.recentlyClosed.has(connKey)) {
         return;
       }
-
       if (!RST && ENABLE_DEBUG) {
         console.log(
           `[REVERSE TCP] No connection for port ${connKey}, sending RST`,
         );
       }
-
       if (!RST) {
         this.sendRSTForReverse(srcPort, dstPort, srcIP, dstIP, ackNum);
       }
-
       return;
     }
 
     if (conn.state === "SYN_SENT" && SYN && ACK) {
       conn.state = "ESTABLISHED";
-
       conn.vmSeq = (seqNum + 1) >>> 0;
 
       this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, srcIP, dstIP, {
@@ -300,30 +285,48 @@ class VMSession {
       if (conn.onConnected) {
         conn.onConnected();
       }
-
       return;
     }
 
     if (conn.state !== "ESTABLISHED") return;
 
     if (payload.length > 0) {
-      // v86 sometimes sends a 6-byte payload with ACKs that should be ignored.
+      // Check if this is the data we expect
+      if (seqNum !== conn.vmSeq) {
+        if (ENABLE_DEBUG) {
+          console.log(
+            `[R-TRACE] Ignoring packet: seq=${seqNum} expected=${conn.vmSeq}`,
+          );
+        }
+        this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, srcIP, dstIP, {
+          ack: true,
+        });
+        return;
+      }
 
+      // v86 sometimes sends a 6-byte payload with ACKs that should be ignored.
       if (payload.length === 6 && payload.readUInt32BE(0) === 0) {
         if (ENABLE_DEBUG) {
           console.log(`[R-TRACE] Ignoring 6-byte garbage payload.`);
         }
-
         return;
       }
 
-      conn.downstream.write(payload);
-
+      // Write to downstream and wait for it to drain before ACKing
+      const canWrite = conn.downstream.write(payload);
       conn.vmSeq = (conn.vmSeq + payload.length) >>> 0;
 
-      this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, srcIP, dstIP, {
-        ack: true,
-      });
+      if (canWrite) {
+        this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, srcIP, dstIP, {
+          ack: true,
+        });
+      } else {
+        conn.downstream.once("drain", () => {
+          this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, srcIP, dstIP, {
+            ack: true,
+          });
+        });
+      }
     }
 
     if (FIN) {
@@ -1772,7 +1775,9 @@ const adminServer = http.createServer((req, res) => {
       "Content-Type": "application/json",
     });
     res.end(JSON.stringify(sessions));
-  } else if (req.url.match(/\/api\/sessions\/(.+)\/nickname/) && req.method === "POST") {
+  } else if (
+    req.url.match(/\/api\/sessions\/(.+)\/nickname/) && req.method === "POST"
+  ) {
     const sessionId = req.url.match(/\/api\/sessions\/(.+)\/nickname/)[1];
     const session = activeSessions.get(sessionId);
     if (session) {
@@ -1846,7 +1851,7 @@ function findProxyRule(req) {
   let bestMatchScore = -1;
 
   for (const rule of proxyRules) {
-    if (rule.type !== 'http') continue;
+    if (rule.type !== "http") continue;
 
     const vhostMatches = !rule.vhost || rule.vhost === host;
     const pathMatches = urlPath.startsWith(rule.path);
@@ -2041,4 +2046,3 @@ const proxyServer = http.createServer((req, res) => {
 proxyServer.listen(PROXY_PORT, () => {
   console.log(`💡 Proxy server listening on port ${PROXY_PORT}`);
 });
-
