@@ -1,6 +1,7 @@
 const WebSocket = require("ws");
 const dgram = require("dgram");
 const net = require("net");
+const crypto = require("crypto");
 
 // ==============================================================================
 // CONFIGURATION
@@ -1675,7 +1676,7 @@ wss.on("connection", (ws, req) => {
   console.log(`✅ New connection from ${clientIP}`);
 
   const session = new VMSession(ws, clientIP);
-  const sessionId = Date.now() + "-" + Math.random();
+  const sessionId = crypto.randomUUID();
   activeSessions.set(sessionId, session);
 
   ws.on("message", (data) => {
