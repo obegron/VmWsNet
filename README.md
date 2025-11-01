@@ -19,7 +19,7 @@ All configuration is done by editing the constants at the top of the `relay.js` 
 
 | Setting                  | Purpose                                                                | Default |
 | ------------------------ | ---------------------------------------------------------------------- | ------- |
-| `ENABLE_DEBUG`           | Enable verbose debug logging to the console.                           | `false` |
+| `LOG_LEVEL`              | Controls the verbosity of logging. `0` (Disabled), `1` (Debug), `2` (Trace). | `0`     |
 | `RATE_LIMIT_KBPS`        | Maximum upload/download bandwidth for each VM in kilobytes per second. | `1024`  |
 | `MAX_CONNECTIONS_PER_IP` | Maximum number of concurrent WebSocket connections from a single IP.   | `4`     |
 | `ENABLE_WSS`             | Use Secure WebSockets (WSS). Requires `cert.pem` and `key.pem`.        | `true`  |

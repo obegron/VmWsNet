@@ -11,8 +11,6 @@ const crypto = require("crypto");
 // --- Basic Settings ---
 // ==============================================================================
 
-// ENABLE_DEBUG: Set to true to enable general debug logging to the console.
-
 const RATE_LIMIT_KBPS = 1024;
 
 // MAX_CONNECTIONS_PER_IP: The maximum number of concurrent WebSocket connections allowed from a single IP address.
@@ -29,11 +27,14 @@ const ENABLE_VM_TO_VM = true;
 // --- Advanced Settings ---
 // ==============================================================================
 
-// ENABLE_DEBUG: Set to true to enable general debug logging to the console.
-const ENABLE_DEBUG = false;
+const LOG_LEVEL_DISABLED = 0;
+const LOG_LEVEL_DEBUG = 1;
+const LOG_LEVEL_TRACE = 2;
 
-// ENABLE_TRACE: Set to true to enable verbose packet-level trace logging.
-const ENABLE_TRACE = false;
+// LOG_LEVEL: Set to LOG_LEVEL_DEBUG for general debug logging,
+// LOG_LEVEL_TRACE for verbose packet-level trace logging, or
+// LOG_LEVEL_DISABLED to disable all debug/trace logging.
+const log_level = LOG_LEVEL_DISABLED;
 
 // GATEWAY_IP: The IP address of the virtual gateway within the VM's network.
 const GATEWAY_IP = "10.0.2.2";
@@ -121,7 +122,7 @@ if (ENABLE_WSS) {
 
   httpsServer.listen(WS_PORT);
   console.log(
-    `Secure WebSocket (WSS) VPN server istening on port ${WS_PORT}`,
+    `Secure WebSocket (WSS) VPN server, visit https://127.0.0.1:${WS_PORT} and trust your certificate`,
   );
 } else {
   wss = new WebSocket.Server({
@@ -184,7 +185,7 @@ class VMSession {
       );
     }, 100);
 
-    if (ENABLE_DEBUG) {
+    if (log_level >= LOG_LEVEL_DEBUG) {
       console.log(`New session created for ${clientIP}`);
     }
   }
@@ -210,7 +211,7 @@ class VMSession {
       }
     }, 31000);
 
-    if (ENABLE_DEBUG) {
+    if (log_level >= LOG_LEVEL_DEBUG) {
       console.log(
         `[UDP PROXY NAT] Creating NAT entry for ${clientRinfo.address}:${clientRinfo.port} on ephemeral port ${ephemeralPort}`,
       );
@@ -279,7 +280,7 @@ class VMSession {
       this.reverseTcpConnections.set(connKey, conn);
 
       conn.upstream.on("data", (data) => {
-        if (ENABLE_DEBUG) {
+        if (log_level >= LOG_LEVEL_DEBUG) {
           console.log(
             `[UPSTREAM] Received ${data.length} bytes from client. Forwarding to VM.`,
           );
@@ -322,7 +323,7 @@ class VMSession {
     const RST = (flags & 0x04) !== 0;
     const payload = ipPacket.slice(ihl + dataOffset);
 
-    if (ENABLE_TRACE) {
+    if (log_level >= LOG_LEVEL_TRACE) {
       const f = [
         SYN ? "SYN" : "",
 
@@ -353,7 +354,7 @@ class VMSession {
       if (this.recentlyClosed.has(connKey)) {
         return;
       }
-      if (!RST && ENABLE_DEBUG) {
+      if (!RST && log_level >= LOG_LEVEL_DEBUG) {
         console.log(
           `[REVERSE TCP] No connection for port ${connKey}, sending RST`,
         );
@@ -381,7 +382,7 @@ class VMSession {
     if (conn.state !== "ESTABLISHED") return;
 
     if (RST) {
-      if (ENABLE_DEBUG) {
+      if (log_level >= LOG_LEVEL_DEBUG) {
         console.log(
           `[REVERSE TCP] RST received, closing connection ${connKey}`,
         );
@@ -397,7 +398,7 @@ class VMSession {
       const allZeros = payload.every((b) => b === 0);
 
       if (allSpaces || allZeros) {
-        if (ENABLE_TRACE) {
+        if (log_level >= LOG_LEVEL_TRACE) {
           console.log(
             `[R-TRACE] Ignoring 6-byte ${allSpaces ? "spaces" : "zeros"
             } artifact`,
@@ -414,7 +415,7 @@ class VMSession {
     if (payload.length > 0) {
       // Check if this is old, already-processed data (a retransmission)
       if (this.seqLessThan(seqNum, conn.vmSeq)) {
-        if (ENABLE_DEBUG) {
+        if (log_level >= LOG_LEVEL_DEBUG) {
           console.log(
             `[R-TRACE] Ignoring retransmitted packet: seq=${seqNum} but already have up to ${conn.vmSeq}`,
           );
@@ -429,7 +430,7 @@ class VMSession {
       // If the sequence number is from the future, the packets are out of order.
       // IMPORTANT: Use seqLessThan for proper wraparound handling
       if (!this.seqLessThan(seqNum, conn.vmSeq) && seqNum !== conn.vmSeq) {
-        if (ENABLE_DEBUG) {
+        if (log_level >= LOG_LEVEL_DEBUG) {
           console.log(
             `[R-TRACE] Ignoring out-of-order (future) packet: seq=${seqNum} expected=${conn.vmSeq}`,
           );
@@ -441,7 +442,7 @@ class VMSession {
       }
 
       // If we reach here, seqNum === conn.vmSeq. This is the expected in-order packet.
-      if (ENABLE_DEBUG) {
+      if (log_level >= LOG_LEVEL_DEBUG) {
         console.log(
           `[R-TRACE-DATA] Writing ${payload.length} bytes to downstream. Data (first 32 bytes): ${payload.toString("hex", 0, Math.min(payload.length, 32))
           }`,
@@ -528,7 +529,7 @@ class VMSession {
       // Store MAC address
       if (!this.vmMAC || this.vmMAC !== macStr) {
         this.vmMAC = macStr;
-        if (ENABLE_DEBUG) {
+        if (log_level >= LOG_LEVEL_DEBUG) {
           console.log(`🔖 – VM MAC: ${macStr}`);
         }
       }
@@ -539,7 +540,7 @@ class VMSession {
         this.handleIPv4(frame.slice(14));
       }
     } catch (err) {
-      if (ENABLE_DEBUG) console.error("❌ Error:", err);
+      if (log_level >= LOG_LEVEL_DEBUG) console.error("❌ Error:", err);
     }
   }
 
@@ -550,7 +551,7 @@ class VMSession {
     const senderIP = Array.from(arpPacket.slice(14, 18)).join(".");
     const targetIP = Array.from(arpPacket.slice(24, 28)).join(".");
 
-    if (ENABLE_DEBUG) {
+    if (log_level >= LOG_LEVEL_DEBUG) {
       console.log(
         `🔍 ARP ${opcode === 1 ? "Request" : "Reply"
         }: ${senderIP} -> ${targetIP}`,
@@ -584,13 +585,13 @@ class VMSession {
       arpPacket.slice(8, 14).copy(reply, 32);
       arpPacket.slice(14, 18).copy(reply, 38);
 
-      if (ENABLE_DEBUG) console.log(`Sending ARP reply`);
+      if (log_level >= LOG_LEVEL_DEBUG) console.log(`Sending ARP reply`);
       this.sendToVM(reply);
     } else if (opcode === 1) {
       // ARP request for another VM on the network
       if (!ENABLE_VM_TO_VM) {
         // Don't respond to ARP requests for other VMs if routing is disabled
-        if (ENABLE_DEBUG) {
+        if (log_level >= LOG_LEVEL_DEBUG) {
           console.log(
             `🚫 VM-to-VM routing disabled, ignoring ARP for ${targetIP}`,
           );
@@ -621,7 +622,7 @@ class VMSession {
         arpPacket.slice(8, 14).copy(reply, 32); // Target MAC
         arpPacket.slice(14, 18).copy(reply, 38); // Target IP
 
-        if (ENABLE_DEBUG) {
+        if (log_level >= LOG_LEVEL_DEBUG) {
           console.log(`Sending ARP reply for ${targetIP} (VM-to-VM)`);
         }
         this.sendToVM(reply);
@@ -636,7 +637,7 @@ class VMSession {
     const srcIP = Array.from(ipPacket.slice(12, 16)).join(".");
     const dstIP = Array.from(ipPacket.slice(16, 20)).join(".");
 
-    if (ENABLE_DEBUG) {
+    if (log_level >= LOG_LEVEL_DEBUG) {
       const proto = protocol === 6
         ? "TCP"
         : protocol === 17
@@ -654,10 +655,14 @@ class VMSession {
 
     // Handle UDP broadcast
     if (ENABLE_VM_TO_VM && dstIP === "10.0.2.255" && protocol === 17) {
-      if (ENABLE_DEBUG) console.log(`📢 Broadcasting UDP packet from ${srcIP}`);
+      if (log_level >= LOG_LEVEL_DEBUG) {
+        console.log(`📢 Broadcasting UDP packet from ${srcIP}`);
+      }
       activeSessions.forEach((session, _sessionId) => {
         if (session.vmIP && session.vmIP !== srcIP) {
-          if (ENABLE_DEBUG) console.log(`   -> Relaying to ${session.vmIP}`);
+          if (log_level >= LOG_LEVEL_DEBUG) {
+            console.log(`   -> Relaying to ${session.vmIP}`);
+          }
           session.sendIPToVM(ipPacket);
         }
       });
@@ -671,7 +676,9 @@ class VMSession {
     ) {
       const targetSession = ipToSession.get(dstIP);
       if (targetSession) {
-        if (ENABLE_DEBUG) console.log(`🔄 Routing to VM ${dstIP}`);
+        if (log_level >= LOG_LEVEL_DEBUG) {
+          console.log(`🔄 Routing to VM ${dstIP}`);
+        }
         targetSession.sendIPToVM(ipPacket);
         return;
       }
@@ -721,13 +728,15 @@ class VMSession {
 
         if (kind === 3 && len === 3) { // Window Scale
           windowScale = ipPacket[optOffset + 2];
-          if (ENABLE_DEBUG) console.log(`     Window scale: ${windowScale}`);
+          if (log_level >= LOG_LEVEL_DEBUG) {
+            console.log(`     Window scale: ${windowScale}`);
+          }
         }
         optOffset += len;
       }
     }
 
-    if (ENABLE_DEBUG) {
+    if (log_level >= LOG_LEVEL_DEBUG) {
       const f = [
         SYN ? "SYN" : "",
         ACK ? "ACK" : "",
@@ -743,12 +752,14 @@ class VMSession {
     const connKey = `${srcPort}:${dstIP}:${dstPort}`;
 
     if (SYN && !ACK) {
-      if (ENABLE_DEBUG) {
+      if (log_level >= LOG_LEVEL_DEBUG) {
         console.log(`   Opening connection to ${dstIP}:${dstPort}`);
       }
 
       const socket = net.connect(dstPort, dstIP, () => {
-        if (ENABLE_DEBUG) console.log(`   ✅ Connected to ${dstIP}:${dstPort}`);
+        if (log_level >= LOG_LEVEL_DEBUG) {
+          console.log(`   ✅ Connected to ${dstIP}:${dstPort}`);
+        }
       });
 
       // Increase socket buffer sizes for better performance
@@ -779,7 +790,7 @@ class VMSession {
       socket.on("data", (data) => {
         const c = this.tcpConnections.get(connKey);
         if (!c) return;
-        if (ENABLE_DEBUG) {
+        if (log_level >= LOG_LEVEL_DEBUG) {
           console.log(
             `   Received ${data.length} bytes from ${dstIP}:${dstPort}`,
           );
@@ -794,7 +805,7 @@ class VMSession {
       });
 
       socket.on("end", () => {
-        if (ENABLE_DEBUG) {
+        if (log_level >= LOG_LEVEL_DEBUG) {
           console.log(`   Connection ended: ${dstIP}:${dstPort}`);
         }
         const c = this.tcpConnections.get(connKey);
@@ -808,7 +819,9 @@ class VMSession {
       });
 
       socket.on("error", (err) => {
-        if (ENABLE_DEBUG) console.error(`   ❌ TCP error: ${err.message}`);
+        if (log_level >= LOG_LEVEL_DEBUG) {
+          console.error(`   ❌ TCP error: ${err.message}`);
+        }
         const c = this.tcpConnections.get(connKey);
         if (c) {
           this.sendTCP(c, Buffer.alloc(0), dstPort, srcPort, dstIP, srcIP, {
@@ -824,7 +837,7 @@ class VMSession {
 
     const conn = this.tcpConnections.get(connKey);
     if (!conn) {
-      if (ENABLE_DEBUG && !RST) {
+      if (log_level >= LOG_LEVEL_DEBUG && !RST) {
         console.log(`   ⚠ No connection for ${connKey}`);
       }
       return;
@@ -838,7 +851,7 @@ class VMSession {
       const acked = this.seqDiff(ackNum, conn.vmLastAck);
 
       if (acked > 0) {
-        if (ENABLE_DEBUG) {
+        if (log_level >= LOG_LEVEL_DEBUG) {
           console.log(`   ✅ VM ACKed ${acked} bytes (to ${ackNum})`);
         }
         conn.dupAckCount = 0;
@@ -869,11 +882,13 @@ class VMSession {
         });
       } else if (acked === 0 && conn.inFlight.length > 0) {
         conn.dupAckCount = (conn.dupAckCount || 0) + 1;
-        if (ENABLE_DEBUG) {
+        if (log_level >= LOG_LEVEL_DEBUG) {
           console.log(`   🔄 Duplicate ACK #${conn.dupAckCount} for ${ackNum}`);
         }
         if (conn.dupAckCount === 3) {
-          if (ENABLE_DEBUG) console.log(`   ⚡ Fast retransmit triggered`);
+          if (log_level >= LOG_LEVEL_DEBUG) {
+            console.log(`   ⚡ Fast retransmit triggered`);
+          }
           this.retransmitFirst(connKey, {
             dstPort,
             srcPort,
@@ -890,7 +905,9 @@ class VMSession {
 
     if (conn.state === "SYN_SENT" && ACK) {
       conn.state = "ESTABLISHED";
-      if (ENABLE_DEBUG) console.log(`   🤝 Connection established: ${connKey}`);
+      if (log_level >= LOG_LEVEL_DEBUG) {
+        console.log(`   🤝 Connection established: ${connKey}`);
+      }
 
       // Always ACK the handshake, but ignore any piggybacked data
       this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, dstIP, srcIP, {
@@ -904,7 +921,9 @@ class VMSession {
     if (conn.state !== "ESTABLISHED") return;
 
     if (RST) {
-      if (ENABLE_DEBUG) console.log(`   🛑 RST received, closing connection`);
+      if (log_level >= LOG_LEVEL_DEBUG) {
+        console.log(`   🛑 RST received, closing connection`);
+      }
       if (conn.socket) conn.socket.destroy();
       if (conn.retransmitTimeout) clearTimeout(conn.retransmitTimeout);
       this.tcpConnections.delete(connKey);
@@ -917,7 +936,7 @@ class VMSession {
       const allZeros = payload.every((b) => b === 0);
 
       if (allSpaces || allZeros) {
-        if (ENABLE_DEBUG) {
+        if (log_level >= LOG_LEVEL_DEBUG) {
           console.log(
             `   🔍 6-byte packet: ${allSpaces ? "all spaces (0x20)" : "all zeros"
             }`,
@@ -943,14 +962,16 @@ class VMSession {
         conn.vmSeq = (seqNum + payload.length) >>> 0;
       } else if (this.seqLessThan(seqNum, expected)) {
         // Old data - retransmission
-        if (ENABLE_DEBUG) console.log(`   🔄 Retransmission from VM`);
+        if (log_level >= LOG_LEVEL_DEBUG) {
+          console.log(`   🔄 Retransmission from VM`);
+        }
         this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, dstIP, srcIP, {
           ack: true,
         });
         return;
       } else {
         // Future sequence number - out of order
-        if (ENABLE_DEBUG) {
+        if (log_level >= LOG_LEVEL_DEBUG) {
           console.log(
             `   ⚠ Out of order from VM (seq=${seqNum}, expected=${expected})`,
           );
@@ -960,7 +981,7 @@ class VMSession {
 
       // Forward payload to real socket
       if (conn.socket && conn.socket.writable) {
-        if (ENABLE_DEBUG) {
+        if (log_level >= LOG_LEVEL_DEBUG) {
           console.log(
             `   📤 Forwarding ${payload.length} bytes to ${dstIP}:${dstPort}`,
           );
@@ -975,7 +996,9 @@ class VMSession {
     }
 
     if (FIN) {
-      if (ENABLE_DEBUG) console.log(`   Closing (FIN): ${connKey}`);
+      if (log_level >= LOG_LEVEL_DEBUG) {
+        console.log(`   Closing (FIN): ${connKey}`);
+      }
 
       // A FIN consumes a sequence number. We should only process it if it's the one we expect.
       if (seqNum === conn.vmSeq) {
@@ -1007,7 +1030,7 @@ class VMSession {
     } = info;
     const segment = conn.inFlight[0];
 
-    if (ENABLE_DEBUG) {
+    if (log_level >= LOG_LEVEL_DEBUG) {
       console.log(`   🔁 Retransmitting ${segment.length} bytes`);
     }
 
@@ -1055,7 +1078,7 @@ class VMSession {
       }
 
       if (this.ws.bufferedAmount > 32768) {
-        if (ENABLE_DEBUG) {
+        if (log_level >= LOG_LEVEL_DEBUG) {
           console.log(
             `   🚦 WebSocket buffer full (${this.ws.bufferedAmount}), pausing`,
           );
@@ -1072,7 +1095,7 @@ class VMSession {
       const available = Math.max(0, conn.vmWindow - inFlightBytes);
 
       if (available === 0) {
-        if (ENABLE_DEBUG) {
+        if (log_level >= LOG_LEVEL_DEBUG) {
           console.log(`   🚫 Window full (${inFlightBytes} in flight)`);
         }
         conn.sending = false;
@@ -1088,7 +1111,9 @@ class VMSession {
       }
 
       if (!this.canSend(toSend)) {
-        if (ENABLE_DEBUG) console.log(`   ⏳ Rate limit, waiting...`);
+        if (log_level >= LOG_LEVEL_DEBUG) {
+          console.log(`   ⏳ Rate limit, waiting...`);
+        }
         conn.sending = false;
         setTimeout(() => this.trySendToVM(connKey, info), 20);
         return;
@@ -1096,7 +1121,7 @@ class VMSession {
 
       const chunk = data.slice(0, toSend);
 
-      if (ENABLE_DEBUG) {
+      if (log_level >= LOG_LEVEL_DEBUG) {
         console.log(
           `    Sending ${chunk.length}B to VM (queue:${conn.sendQueue.length} inflight:${inFlightBytes} window:${conn.vmWindow})`,
         );
@@ -1143,7 +1168,7 @@ class VMSession {
     const cksum = this.calcTCPChecksum(ip);
     ip.writeUInt16BE(cksum, 20 + 16);
 
-    if (ENABLE_DEBUG) console.log(`    Sending SYN-ACK`);
+    if (log_level >= LOG_LEVEL_DEBUG) console.log(`    Sending SYN-ACK`);
     this.sendIPToVM(ip);
   }
 
@@ -1275,7 +1300,9 @@ class VMSession {
     const dstIP = Array.from(ipPacket.slice(16, 20)).join(".");
 
     if (icmpType === 8 && dstIP === GATEWAY_IP) {
-      if (ENABLE_DEBUG) console.log(`🔍 ICMP ping from ${srcIP}`);
+      if (log_level >= LOG_LEVEL_DEBUG) {
+        console.log(`🔍 ICMP ping from ${srcIP}`);
+      }
 
       const reply = Buffer.alloc(ipPacket.length);
       ipPacket.copy(reply);
@@ -1292,7 +1319,7 @@ class VMSession {
       const ipCksum = this.calcChecksum(reply.slice(0, 20));
       reply.writeUInt16BE(ipCksum, 10);
 
-      if (ENABLE_DEBUG) console.log(` ICMP reply`);
+      if (log_level >= LOG_LEVEL_DEBUG) console.log(` ICMP reply`);
       this.sendIPToVM(reply);
     }
   }
@@ -1303,7 +1330,9 @@ class VMSession {
     const srcIP = Array.from(ipPacket.slice(12, 16)).join(".");
     const dstIP = Array.from(ipPacket.slice(16, 20)).join(".");
 
-    if (ENABLE_DEBUG) console.log(`📡 UDP: ${srcPort} -> ${dstPort}`);
+    if (log_level >= LOG_LEVEL_DEBUG) {
+      console.log(`📡 UDP: ${srcPort} -> ${dstPort}`);
+    }
 
     // Check if this is a response for a proxied UDP connection
     if (this.udpProxyNatTable.has(dstPort)) {
@@ -1312,7 +1341,7 @@ class VMSession {
 
       if (hostSocket) {
         const payload = ipPacket.slice(28);
-        if (ENABLE_DEBUG) {
+        if (log_level >= LOG_LEVEL_DEBUG) {
           console.log(
             `[UDP PROXY NAT] Forwarding reply from VM to ${clientRinfo.address}:${clientRinfo.port}`,
           );
@@ -1338,7 +1367,7 @@ class VMSession {
 
       // Avoid duplicate listeners
       if (this.udpResponseListeners.has(listenerKey)) {
-        if (ENABLE_DEBUG) {
+        if (log_level >= LOG_LEVEL_DEBUG) {
           console.log(
             `   ⚠ DNS listener already exists for port ${srcPort}, skipping`,
           );
@@ -1346,28 +1375,42 @@ class VMSession {
         return;
       }
 
-      if (ENABLE_DEBUG) {
+      if (log_level >= LOG_LEVEL_DEBUG) {
         console.log(`🔍 DNS query detected from port ${srcPort}`);
+      }
+      if (log_level >= LOG_LEVEL_TRACE) {
+        // Parse the DNS question name for tracing
+        let qdcount = payload.readUInt16BE(4);
+        let offset = 12;
+        let hostname = "";
+        if (qdcount > 0) {
+          hostname = this.parseDnsQuestionName(payload, offset);
+        }
+        console.log(`   🔎 DNS Query for: ${hostname}`);
       }
 
       this.udpSocket.send(payload, dstPort, dstIP, (err) => {
         if (err) {
           console.error(`❌ UDP error:`, err.message);
         } else {
-          if (ENABLE_DEBUG) console.log(`✅ DNS query forwarded`);
+          if (log_level >= LOG_LEVEL_DEBUG) {
+            console.log(`✅ DNS query forwarded`);
+          }
           this.setupDNSResponse(ipPacket, srcPort, dstPort, dstIP, srcIP);
         }
       });
       return;
     }
 
-    if (ENABLE_DEBUG) console.log(`📀 Forwarding UDP to ${dstIP}:${dstPort}`);
+    if (log_level >= LOG_LEVEL_DEBUG) {
+      console.log(`📀 Forwarding UDP to ${dstIP}:${dstPort}`);
+    }
 
     this.udpSocket.send(payload, dstPort, dstIP, (err) => {
       if (err) {
         console.error(`❌ UDP error:`, err.message);
       } else {
-        if (ENABLE_DEBUG) console.log(`✅ UDP forwarded`);
+        if (log_level >= LOG_LEVEL_DEBUG) console.log(`✅ UDP forwarded`);
         this.setupUDPResponse(ipPacket, srcPort, dstPort, dstIP);
       }
     });
@@ -1376,7 +1419,7 @@ class VMSession {
   setupDNSResponse(origIP, vmPort, remotePort, remoteIP, vmIP) {
     const listenerKey = `dns-${vmPort}`;
     if (this.udpResponseListeners.has(listenerKey)) {
-      if (ENABLE_DEBUG) {
+      if (log_level >= LOG_LEVEL_DEBUG) {
         console.log(`   ⚠ DNS listener already registered for ${listenerKey}`);
       }
       return;
@@ -1384,7 +1427,7 @@ class VMSession {
 
     const handler = (msg, rinfo) => {
       if (rinfo.address === remoteIP && rinfo.port === remotePort) {
-        if (ENABLE_DEBUG) {
+        if (log_level >= LOG_LEVEL_DEBUG) {
           console.log(
             ` DNS response from ${rinfo.address}:${rinfo.port} (${msg.length} bytes)`,
           );
@@ -1393,7 +1436,9 @@ class VMSession {
         // Filter out IPv6 (AAAA) records from DNS response
         const filteredResponse = this.filterDNSResponse(msg);
 
-        if (ENABLE_DEBUG && filteredResponse.length !== msg.length) {
+        if (
+          log_level >= LOG_LEVEL_DEBUG && filteredResponse.length !== msg.length
+        ) {
           console.log(
             `   🔧 DNS response filtered: ${msg.length} -> ${filteredResponse.length} bytes`,
           );
@@ -1413,7 +1458,7 @@ class VMSession {
       if (this.udpResponseListeners.get(listenerKey) === handler) {
         this.udpSocket.removeListener("message", handler);
         this.udpResponseListeners.delete(listenerKey);
-        if (ENABLE_DEBUG) {
+        if (log_level >= LOG_LEVEL_DEBUG) {
           console.log(`   ⏰ DNS listener timeout for port ${vmPort}`);
         }
       }
@@ -1424,12 +1469,12 @@ class VMSession {
     if (dnsPacket.length < 12) return dnsPacket;
 
     try {
-      const id = dnsPacket.readUInt16BE(0);
-      const flags = dnsPacket.readUInt16BE(2);
+      //const id = dnsPacket.readUInt16BE(0);
+      //const flags = dnsPacket.readUInt16BE(2);
       const qdcount = dnsPacket.readUInt16BE(4);
       const ancount = dnsPacket.readUInt16BE(6);
-      const nscount = dnsPacket.readUInt16BE(8);
-      const arcount = dnsPacket.readUInt16BE(10);
+      //const nscount = dnsPacket.readUInt16BE(8);
+      //const arcount = dnsPacket.readUInt16BE(10);
 
       // If there are no answers, don't filter (might be NXDOMAIN or error)
       if (ancount === 0) return dnsPacket;
@@ -1452,7 +1497,6 @@ class VMSession {
       }
 
       const questionSection = dnsPacket.slice(questionStart, offset);
-      const answerStart = offset;
 
       // Parse and filter answers
       const keptAnswers = [];
@@ -1490,7 +1534,7 @@ class VMSession {
           newAncount++;
           hasIPv6Only = false;
         } else {
-          if (ENABLE_DEBUG) {
+          if (log_level >= LOG_LEVEL_DEBUG) {
             console.log(`   🚫 Filtered out IPv6 (AAAA) record`);
           }
         }
@@ -1501,7 +1545,7 @@ class VMSession {
       // If ALL answers were IPv6, return original to avoid breaking DNS
       // (client will handle lack of IPv4 support)
       if (hasIPv6Only && keptAnswers.length === 0) {
-        if (ENABLE_DEBUG) {
+        if (log_level >= LOG_LEVEL_DEBUG) {
           console.log(`   ⚠ Only IPv6 answers, returning original packet`);
         }
         return dnsPacket;
@@ -1526,11 +1570,36 @@ class VMSession {
 
       return dnsPacket;
     } catch (err) {
-      if (ENABLE_DEBUG) {
+      if (log_level >= LOG_LEVEL_DEBUG) {
         console.error(`   ⚠ DNS filtering error: ${err.message}`);
       }
       return dnsPacket; // Return original on error
     }
+  }
+
+  parseDnsQuestionName(dnsPacket, offset) {
+    let name = "";
+    let currentOffset = offset;
+    while (currentOffset < dnsPacket.length && dnsPacket[currentOffset] !== 0) {
+      const len = dnsPacket[currentOffset];
+      if ((len & 0xC0) === 0xC0) { // Pointer
+        const pointerOffset = dnsPacket.readUInt16BE(currentOffset) & 0x3FFF;
+        name += this.parseDnsQuestionName(dnsPacket, pointerOffset);
+        currentOffset += 2;
+        break;
+      } else {
+        name += dnsPacket.toString(
+          "ascii",
+          currentOffset + 1,
+          currentOffset + 1 + len,
+        );
+        currentOffset += len + 1;
+        if (dnsPacket[currentOffset] !== 0) {
+          name += ".";
+        }
+      }
+    }
+    return name;
   }
 
   setupUDPResponse(origIP, vmPort, remotePort, remoteIP) {
@@ -1538,7 +1607,7 @@ class VMSession {
 
     const handler = (msg, rinfo) => {
       if (rinfo.address === remoteIP && rinfo.port === remotePort) {
-        if (ENABLE_DEBUG) {
+        if (log_level >= LOG_LEVEL_DEBUG) {
           console.log(` UDP response from ${rinfo.address}:${rinfo.port}`);
         }
 
@@ -1576,7 +1645,7 @@ class VMSession {
     ip.writeUInt16BE(cksum, 20 + 6);
 
     this.sendIPToVM(ip);
-    if (ENABLE_DEBUG) console.log(`  UDP response sent`);
+    if (log_level >= LOG_LEVEL_DEBUG) console.log(`  UDP response sent`);
   }
 
   handleDHCP(ipPacket) {
@@ -1710,13 +1779,13 @@ class VMSession {
       this.ws.send(data, {
         binary: true,
       }, (err) => {
-        if (err && ENABLE_DEBUG) {
+        if (err && log_level >= LOG_LEVEL_DEBUG) {
           console.log(`   ❌ Error sending to VM: ${err.message}`);
         }
         if (callback) callback(err);
       });
     } else {
-      if (ENABLE_DEBUG) {
+      if (log_level >= LOG_LEVEL_DEBUG) {
         console.log(`   ❌ WebSocket not open (state: ${this.ws.readyState})`);
       }
       if (callback) callback(new Error("WebSocket not open"));
@@ -1840,7 +1909,7 @@ const udpProxySockets = new Map();
 
 function stopTcpForward(ruleId) {
   if (runningTcpProxies.has(ruleId)) {
-    if (ENABLE_DEBUG) {
+    if (log_level >= LOG_LEVEL_DEBUG) {
       console.log(`[TCP PROXY] Stopping proxy for rule ${ruleId}`);
     }
     const server = runningTcpProxies.get(ruleId);
@@ -1851,7 +1920,7 @@ function stopTcpForward(ruleId) {
 
 function stopUdpForward(ruleId) {
   if (runningUdpProxies.has(ruleId)) {
-    if (ENABLE_DEBUG) {
+    if (log_level >= LOG_LEVEL_DEBUG) {
       console.log(`[UDP PROXY] Stopping proxy for rule ${ruleId}`);
     }
     const server = runningUdpProxies.get(ruleId);
@@ -1885,7 +1954,7 @@ async function startTcpForward(rule) {
     return;
   }
 
-  if (ENABLE_DEBUG) {
+  if (log_level >= LOG_LEVEL_DEBUG) {
     console.log(
       `[TCP PROXY] Starting proxy for rule ${rule.id}: host port ${rule.host_port} -> ${rule.vm}:${rule.port}`,
     );
@@ -1925,7 +1994,7 @@ async function startTcpForward(rule) {
       localSocket.pipe(upstream);
       // downstream.pipe(localSocket); // Replaced with manual handler for debugging
       downstream.on("data", (data) => {
-        if (ENABLE_TRACE) {
+        if (log_level >= LOG_LEVEL_TRACE) {
           console.log(
             `[R-TRACE-PIPE] Manually writing ${data.length} bytes to localSocket.`,
           );
@@ -1981,7 +2050,7 @@ async function startUdpForward(rule) {
     return;
   }
 
-  if (ENABLE_DEBUG) {
+  if (log_level >= LOG_LEVEL_DEBUG) {
     console.log(
       `[UDP PROXY] Starting proxy for rule ${rule.id}: host port ${rule.host_port} -> ${rule.vm}:${rule.port}`,
     );
@@ -2000,7 +2069,7 @@ async function startUdpForward(rule) {
   hostSocket.on("message", (msg, rinfo) => {
     const targetSession = ipToSession.get(rule.vm);
     if (!targetSession) {
-      if (ENABLE_DEBUG) {
+      if (log_level >= LOG_LEVEL_DEBUG) {
         console.log(
           `[UDP PROXY] VM ${rule.vm} not connected for incoming packet on port ${rule.host_port}`,
         );
@@ -2008,7 +2077,7 @@ async function startUdpForward(rule) {
       return;
     }
 
-    if (ENABLE_DEBUG) {
+    if (log_level >= LOG_LEVEL_DEBUG) {
       console.log(
         `[UDP PROXY] Incoming packet on port ${rule.host_port} from ${rinfo.address}:${rinfo.port}, forwarding to VM ${rule.vm}:${rule.port}`,
       );
@@ -2257,7 +2326,7 @@ async function proxyRequest(req, res, rule) {
       if (chunks.length > 0) {
         const fullResponse = Buffer.concat(chunks);
         console.log(`[PROXY] Sending response (${fullResponse.length} bytes)`);
-        if (ENABLE_DEBUG) {
+        if (log_level >= LOG_LEVEL_DEBUG) {
           console.log(
             `[PROXY] First 400 bytes (hex): ${fullResponse.slice(0, 400).toString("hex")
             }`,
