@@ -28,6 +28,9 @@
     .toaster-notification.show {
       opacity: 1;
     }
+    .common-buttons button {
+      margin-right: 10px; /* Space between buttons */
+    }
   </style>
 </head>
 <body>
@@ -97,6 +100,10 @@
         <div class="form-group">
           <label for="port-port">VM Port:</label>
           <input type="text" id="port-port" placeholder="e.g., 80">
+        </div>
+        <div class="common-buttons">
+          <button type="button" onclick="addSshPortForward()">Add SSH (2222 -> VM:22)</button>
+          <button type="button" onclick="addHttpPortForward()">Add HTTP (8888 -> VM:80)</button>
         </div>
       </div>
       <button type="submit">Add Rule</button>
@@ -315,6 +322,36 @@
         newNicknameInput.value = ''; // Clear the input field
         fetchSessions(); // Refresh sessions to show updated nickname
       }
+    }
+
+    async function addSshPortForward() {
+      document.querySelector('input[name="proxy_type"][value="port"]').checked = true;
+      document.getElementById('http-fields').style.display = 'none';
+      document.getElementById('port-fields').style.display = 'block';
+
+      document.getElementById('host_port').value = '2222';
+      document.getElementById('port-port').value = '22';
+      document.getElementById('vm-port').value = document.getElementById('vm-port').options[1] ? document.getElementById('vm-port').options[1].value : ''; // Select first available VM
+
+      document.querySelector('input[name="protocol"][value="tcp"]').checked = true;
+      document.querySelector('input[name="protocol"][value="udp"]').checked = true;
+
+      document.getElementById('add-rule-form').dispatchEvent(new Event('submit'));
+    }
+
+    async function addHttpPortForward() {
+      document.querySelector('input[name="proxy_type"][value="port"]').checked = true;
+      document.getElementById('http-fields').style.display = 'none';
+      document.getElementById('port-fields').style.display = 'block';
+
+      document.getElementById('host_port').value = '8888';
+      document.getElementById('port-port').value = '80';
+      document.getElementById('vm-port').value = document.getElementById('vm-port').options[1] ? document.getElementById('vm-port').options[1].value : ''; // Select first available VM
+
+      document.querySelector('input[name="protocol"][value="tcp"]').checked = true;
+      document.querySelector('input[name="protocol"][value="udp"]').checked = false; // Only TCP for HTTP
+
+      document.getElementById('add-rule-form').dispatchEvent(new Event('submit'));
     }
 
     loadRules();
