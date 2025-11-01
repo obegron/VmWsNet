@@ -4,28 +4,65 @@
 <head>
   <title>rootlessRelay admin</title>
   <style>
+    :root {
+      --ctp-rosewater: #f5e0dc;
+      --ctp-flamingo: #f2cdcd;
+      --ctp-pink: #f5c2e7;
+      --ctp-mauve: #cba6f7;
+      --ctp-red: #f38ba8;
+      --ctp-maroon: #eba0ac;
+      --ctp-peach: #fab387;
+      --ctp-yellow: #f9e2af;
+      --ctp-green: #a6e3a1;
+      --ctp-teal: #94e2d5;
+      --ctp-sky: #89dceb;
+      --ctp-sapphire: #74c7ec;
+      --ctp-blue: #89b4fa;
+      --ctp-lavender: #b4befe;
+      --ctp-text: #cdd6f4;
+      --ctp-subtext1: #bac2de;
+      --ctp-subtext0: #a6adc8;
+      --ctp-overlay2: #9399b2;
+      --ctp-overlay1: #7f849c;
+      --ctp-overlay0: #6c7086;
+      --ctp-surface2: #585b70;
+      --ctp-surface1: #45475a;
+      --ctp-surface0: #313244;
+      --ctp-base: #1e1e2e;
+      --ctp-mantle: #181825;
+      --ctp-crust: #11111b;
+    }
+
     body {
       font-family: sans-serif;
+      background-color: var(--ctp-base);
+      color: var(--ctp-text);
     }
 
     table {
       border-collapse: collapse;
       width: 100%;
+      background-color: var(--ctp-mantle);
+      color: var(--ctp-text);
     }
 
     th,
     td {
-      border: 1px solid #ddd;
+      border: 1px solid var(--ctp-surface1);
       padding: 8px;
       text-align: left;
     }
 
     th {
-      background-color: #f2f2f2;
+      background-color: var(--ctp-surface0);
+      color: var(--ctp-text);
     }
 
     form {
       margin-bottom: 20px;
+      background-color: var(--ctp-mantle);
+      padding: 15px;
+      border-radius: 8px;
     }
 
     .form-group {
@@ -36,16 +73,22 @@
 
     .form-group label {
       margin-bottom: 5px;
+      color: var(--ctp-text);
     }
 
     .form-group input[type="text"],
     .form-group select {
       width: 200px;
+      padding: 8px;
+      border: 1px solid var(--ctp-surface1);
+      border-radius: 4px;
+      background-color: var(--ctp-crust);
+      color: var(--ctp-text);
     }
 
     .optional-text {
       font-size: 0.8em;
-      color: #666;
+      color: var(--ctp-subtext0);
       margin-top: 2px;
     }
 
@@ -54,8 +97,8 @@
       bottom: 20px;
       left: 50%;
       transform: translateX(-50%);
-      background-color: #333;
-      color: white;
+      background-color: var(--ctp-green);
+      color: var(--ctp-crust);
       padding: 10px 20px;
       border-radius: 5px;
       opacity: 0;
@@ -67,9 +110,132 @@
       opacity: 1;
     }
 
-    .common-buttons button {
-      margin-right: 10px;
-      /* Space between buttons */
+    h1, h2 {
+      color: var(--ctp-lavender);
+    }
+
+    a {
+      color: var(--ctp-blue);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    code {
+      background-color: var(--ctp-surface0);
+      color: var(--ctp-text);
+      padding: 2px 4px;
+      border-radius: 4px;
+    }
+
+    .common-buttons button,
+    button[type="submit"],
+    .catppuccin-button {
+      background-color: var(--ctp-blue);
+      color: var(--ctp-crust);
+      border: none;
+      padding: 10px 15px;
+      border-radius: 5px;
+      cursor: pointer;
+      transition: background-color 0.2s ease;
+      margin-right: 10px; /* Space between buttons */
+    }
+
+    .common-buttons button:hover,
+    button[type="submit"]:hover,
+    .catppuccin-button:hover {
+      background-color: var(--ctp-sapphire);
+    }
+
+    button.delete-button {
+      background-color: var(--ctp-red);
+    }
+
+    button.delete-button:hover {
+      background-color: var(--ctp-maroon);
+    }
+
+    .catppuccin-input {
+      padding: 8px;
+      border: 1px solid var(--ctp-surface1);
+      border-radius: 4px;
+      background-color: var(--ctp-crust);
+      color: var(--ctp-text);
+    }
+
+    /* Style for radio buttons and checkboxes */
+    input[type="radio"],
+    input[type="checkbox"] {
+      /* Hide default radio/checkbox */
+      appearance: none;
+      -webkit-appearance: none;
+      -moz-appearance: none;
+      width: 16px;
+      height: 16px;
+      border: 2px solid var(--ctp-surface1);
+      border-radius: 3px;
+      margin-right: 5px;
+      position: relative;
+      cursor: pointer;
+      background-color: var(--ctp-crust);
+    }
+
+    input[type="radio"] {
+      border-radius: 50%; /* Make radio buttons circular */
+    }
+
+    input[type="radio"]:checked,
+    input[type="checkbox"]:checked {
+      border-color: var(--ctp-blue);
+      background-color: var(--ctp-blue);
+    }
+
+    input[type="radio"]:checked::before {
+      content: '';
+      display: block;
+      width: 8px;
+      height: 8px;
+      background-color: var(--ctp-crust);
+      border-radius: 50%;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+    }
+
+    input[type="checkbox"]:checked::before {
+      content: '\2713'; /* Checkmark character */
+      display: block;
+      color: var(--ctp-crust);
+      font-size: 12px;
+      line-height: 1;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+    }
+
+    /* Adjust spacing for common buttons */
+    .common-buttons {
+      display: flex;
+      gap: 10px; /* Space between buttons */
+      margin-top: 10px;
+      margin-bottom: 10px;
+    }
+
+    .common-buttons button:hover,
+    button[type="submit"]:hover {
+      background-color: var(--ctp-sapphire);
+    }
+
+    button.delete-button {
+      background-color: var(--ctp-red);
+    }
+
+    button.delete-button:hover {
+      background-color: var(--ctp-maroon);
     }
   </style>
 </head>
@@ -193,8 +359,8 @@
           row.innerHTML = `
             <td>
               <span id="display-nickname-${session.sessionId}">${session.nickname || session.sessionId}</span><br>
-              <input type="text" id="new-nickname-input-${session.sessionId}" placeholder="New Nickname" onkeydown="if(event.keyCode===13) setNickname('${session.sessionId}')">
-              <button onclick="setNickname('${session.sessionId}')">Set</button>
+              <input type="text" id="new-nickname-input-${session.sessionId}" placeholder="New Nickname" onkeydown="if(event.keyCode===13) setNickname('${session.sessionId}')" class="catppuccin-input">
+              <button onclick="setNickname('${session.sessionId}')" class="catppuccin-button">Set</button>
             </td>
             <td>${session.clientIP}</td>
             <td>${session.vmIP}</td>
@@ -283,7 +449,8 @@
     function showToaster(message, isError = false) {
       const toaster = document.getElementById('toaster-notification');
       toaster.textContent = message;
-      toaster.style.backgroundColor = isError ? '#d9534f' : '#5cb85c'; // Red for error, green for success
+      toaster.style.backgroundColor = isError ? 'var(--ctp-red)' : 'var(--ctp-green)'; // Red for error, green for success
+      toaster.style.color = 'var(--ctp-crust)';
       toaster.classList.add('show');
       setTimeout(() => {
         toaster.classList.remove('show');
@@ -316,10 +483,10 @@
           const udpCommand = `echo "test" | nc -u -w1 localhost ${rule.host_port}`;
           let commands = [];
           if (rule.protocols.includes('tcp')) {
-            commands.push(`<code>${tcpCommand}</code> <button onclick="copyToClipboard('${tcpCommand}')">Copy TCP</button>`);
+            commands.push(`<code>${tcpCommand}</code> <button onclick="copyToClipboard('${tcpCommand}')" class="catppuccin-button">Copy TCP</button>`);
           }
           if (rule.protocols.includes('udp')) {
-            commands.push(`<code>${udpCommand}</code> <button onclick="copyToClipboard('${udpCommand}')">Copy UDP</button>`);
+            commands.push(`<code>${udpCommand}</code> <button onclick="copyToClipboard('${udpCommand}')" class="catppuccin-button">Copy UDP</button>`);
           }
           testInfo = commands.join('<br>');
         } else { // http
@@ -330,7 +497,7 @@
           const proxyUrl = `http://localhost:8080${path}`;
           const link = rule.vhost ? `http://${rule.vhost}:8080${path}` : proxyUrl;
           const curlCommand = rule.vhost ? `curl -H "Host: ${rule.vhost}" ${proxyUrl}` : `curl ${proxyUrl}`;
-          testInfo = `<a href="${link}" target="_blank">${link}</a><br><code>${curlCommand}</code> <button onclick="copyToClipboard('${curlCommand}')">Copy</button>`;
+          testInfo = `<a href="${link}" target="_blank">${link}</a><br><code>${curlCommand}</code> <button onclick="copyToClipboard('${curlCommand}')" class="catppuccin-button">Copy</button>`;
         }
 
         row.innerHTML = `
@@ -340,7 +507,7 @@
           <td>${rule.vm}:${rule.port}</td>
           <td>${targetPath}</td>
           <td>${testInfo}</td>
-          <td><button onclick="deleteRule('${rule.id}')">Delete</button></td>
+          <td><button onclick="deleteRule('${rule.id}')" class="catppuccin-button delete-button">Delete</button></td>
         `;
         tbody.appendChild(row);
       }
