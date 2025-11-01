@@ -12,10 +12,10 @@ const crypto = require("crypto");
 // ==============================================================================
 
 // ENABLE_DEBUG: Set to true to enable general debug logging to the console.
-const ENABLE_DEBUG = false;
+const ENABLE_DEBUG = true;
 
 // ENABLE_TRACE: Set to true to enable verbose packet-level trace logging.
-const ENABLE_TRACE = false;
+const ENABLE_TRACE = true;
 
 // RATE_LIMIT_KBPS: The maximum upload and download bandwidth for each VM in kilobytes per second.
 const RATE_LIMIT_KBPS = 1024;
@@ -147,7 +147,6 @@ console.log(
 `,
 );
 
-
 console.log(`Rate limit: ${RATE_LIMIT_KBPS} KB/s`);
 console.log(`TCP Window: ${TCP_WINDOW_SIZE} bytes`);
 console.log(`DHCP Pool: 10.0.2.${DHCP_START} - 10.0.2.${DHCP_END}`);
@@ -196,7 +195,11 @@ class VMSession {
       ephemeralPort = 40000 + Math.floor(Math.random() * 10000);
     }
 
-    this.udpProxyNatTable.set(ephemeralPort, { clientRinfo, ruleId, lastSeen: Date.now() });
+    this.udpProxyNatTable.set(ephemeralPort, {
+      clientRinfo,
+      ruleId,
+      lastSeen: Date.now(),
+    });
 
     // Clean up old entries after a timeout
     setTimeout(() => {
@@ -207,7 +210,9 @@ class VMSession {
     }, 31000);
 
     if (ENABLE_DEBUG) {
-      console.log(`[UDP PROXY NAT] Creating NAT entry for ${clientRinfo.address}:${clientRinfo.port} on ephemeral port ${ephemeralPort}`);
+      console.log(
+        `[UDP PROXY NAT] Creating NAT entry for ${clientRinfo.address}:${clientRinfo.port} on ephemeral port ${ephemeralPort}`,
+      );
     }
 
     this.sendUDPToVM(payload, ephemeralPort, vmPort, GATEWAY_IP, this.vmIP);
@@ -274,7 +279,9 @@ class VMSession {
 
       conn.upstream.on("data", (data) => {
         if (ENABLE_DEBUG) {
-          console.log(`[UPSTREAM] Received ${data.length} bytes from client. Forwarding to VM.`);
+          console.log(
+            `[UPSTREAM] Received ${data.length} bytes from client. Forwarding to VM.`,
+          );
         }
         this.sendTCP(conn, data, srcPort, dstPort, srcIP, dstIP, {
           ack: true,
@@ -391,8 +398,7 @@ class VMSession {
       if (allSpaces || allZeros) {
         if (ENABLE_TRACE) {
           console.log(
-            `[R-TRACE] Ignoring 6-byte ${
-              allSpaces ? "spaces" : "zeros"
+            `[R-TRACE] Ignoring 6-byte ${allSpaces ? "spaces" : "zeros"
             } artifact`,
           );
         }
@@ -404,48 +410,56 @@ class VMSession {
       }
     }
 
-    if (payload.length > 0) {
-      const isExpected = seqNum === conn.vmSeq;
 
-      if (isExpected) {
-        // This is the only good case. Process the payload.
-        if (ENABLE_TRACE) {
-          console.log(`[R-TRACE-DATA] Writing ${payload.length} bytes to downstream. Data (first 32 bytes): ${payload.toString('hex', 0, Math.min(payload.length, 32))}`);
-        }
-        // Create a copy of the payload buffer. This is a workaround for a suspected
-        // bug in the stream/pipe implementation where the original buffer was being
-        // held and incorrectly re-transmitted. By creating a copy, we ensure the
-        // downstream pipe has its own private version of the data.
-        const payloadCopy = Buffer.from(payload);
-        const canWrite = conn.downstream.write(payloadCopy);
-        conn.vmSeq = (conn.vmSeq + payload.length) >>> 0;
-
-        if (canWrite) {
-          this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, srcIP, dstIP, {
-            ack: true,
-          });
-        } else {
-          conn.downstream.once("drain", () => {
-            this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, srcIP, dstIP, {
-              ack: true,
-            });
-          });
-        }
-      } else {
-        // This covers old (retransmitted) and future (out-of-order) packets.
-        // We just send an ACK and do nothing with the payload.
-        if (ENABLE_DEBUG) {
-          if (this.seqLessThan(seqNum, conn.vmSeq)) {
-            console.log(`[R-TRACE] Ignoring retransmitted packet: seq=${seqNum} but already have up to ${conn.vmSeq}`);
-          } else { // isFuture
-            console.log(`[R-TRACE] Ignoring out-of-order (future) packet: seq=${seqNum} expected=${conn.vmSeq}`);
-          }
-        }
-        this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, srcIP, dstIP, {
-          ack: true,
-        });
-      }
+if (payload.length > 0) {
+  // Check if this is old, already-processed data (a retransmission)
+  if (this.seqLessThan(seqNum, conn.vmSeq)) {
+    if (ENABLE_DEBUG) {
+      console.log(
+        `[R-TRACE] Ignoring retransmitted packet: seq=${seqNum} but already have up to ${conn.vmSeq}`,
+      );
     }
+    // Send a fresh ACK to show what we've received so far. This should stop the retransmissions.
+    this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, srcIP, dstIP, {
+      ack: true,
+    });
+    return; // ← CRITICAL: Must return here, don't process the payload!
+  }
+
+  // If the sequence number is from the future, the packets are out of order.
+  // IMPORTANT: Use seqLessThan for proper wraparound handling
+  if (!this.seqLessThan(seqNum, conn.vmSeq) && seqNum !== conn.vmSeq) {
+    if (ENABLE_DEBUG) {
+      console.log(
+        `[R-TRACE] Ignoring out-of-order (future) packet: seq=${seqNum} expected=${conn.vmSeq}`
+      );
+    }
+    this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, srcIP, dstIP, {
+      ack: true,
+    });
+    return; // ← CRITICAL: Must return here too!
+  }
+
+  // If we reach here, seqNum === conn.vmSeq. This is the expected in-order packet.
+  if (ENABLE_DEBUG) { 
+    console.log(`[R-TRACE-DATA] Writing ${payload.length} bytes to downstream. Data (first 32 bytes): ${payload.toString('hex', 0, Math.min(payload.length, 32))}`); 
+  }
+  
+  const canWrite = conn.downstream.write(payload);
+  conn.vmSeq = (conn.vmSeq + payload.length) >>> 0;
+
+  if (canWrite) {
+    this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, srcIP, dstIP, {
+      ack: true,
+    });
+  } else {
+    conn.downstream.once("drain", () => {
+      this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, srcIP, dstIP, {
+        ack: true,
+      });
+    });
+  }
+}
 
     if (FIN) {
       console.log(
@@ -535,8 +549,7 @@ class VMSession {
 
     if (ENABLE_DEBUG) {
       console.log(
-        `🔍 ARP ${
-          opcode === 1 ? "Request" : "Reply"
+        `🔍 ARP ${opcode === 1 ? "Request" : "Reply"
         }: ${senderIP} -> ${targetIP}`,
       );
     }
@@ -624,10 +637,10 @@ class VMSession {
       const proto = protocol === 6
         ? "TCP"
         : protocol === 17
-        ? "UDP"
-        : protocol === 1
-        ? "ICMP"
-        : protocol;
+          ? "UDP"
+          : protocol === 1
+            ? "ICMP"
+            : protocol;
       console.log(`📦 IPv4 ${proto}: ${srcIP} -> ${dstIP}`);
     }
 
@@ -739,7 +752,7 @@ class VMSession {
       socket.setNoDelay(true);
       try {
         socket.setKeepAlive(true, 30000);
-      } catch (_e) {}
+      } catch (_e) { }
 
       const isn = Math.floor(Math.random() * 0xFFFFFFFF);
       const actualWindow = window << windowScale;
@@ -903,13 +916,11 @@ class VMSession {
       if (allSpaces || allZeros) {
         if (ENABLE_DEBUG) {
           console.log(
-            `   🔍 6-byte packet: ${
-              allSpaces ? "all spaces (0x20)" : "all zeros"
+            `   🔍 6-byte packet: ${allSpaces ? "all spaces (0x20)" : "all zeros"
             }`,
           );
           console.log(
-            `   ⚠️ Ignoring VM TCP stack artifact (6-byte ${
-              allSpaces ? "spaces" : "zeros"
+            `   ⚠️ Ignoring VM TCP stack artifact (6-byte ${allSpaces ? "spaces" : "zeros"
             })`,
           );
         }
@@ -1299,14 +1310,16 @@ class VMSession {
       if (hostSocket) {
         const payload = ipPacket.slice(28);
         if (ENABLE_DEBUG) {
-          console.log(`[UDP PROXY NAT] Forwarding reply from VM to ${clientRinfo.address}:${clientRinfo.port}`);
+          console.log(
+            `[UDP PROXY NAT] Forwarding reply from VM to ${clientRinfo.address}:${clientRinfo.port}`,
+          );
         }
         hostSocket.send(payload, clientRinfo.port, clientRinfo.address);
       }
-      
+
       // We don't remove the NAT entry here to allow for multiple back-and-forth packets
       // It will be cleaned up by its timeout
-      return; 
+      return;
     }
 
     if (dstPort === 67) {
@@ -1846,19 +1859,19 @@ function stopUdpForward(ruleId) {
 }
 
 function startPortForward(rule) {
-  if (rule.protocols.includes('tcp')) {
+  if (rule.protocols.includes("tcp")) {
     startTcpForward(rule);
   }
-  if (rule.protocols.includes('udp')) {
+  if (rule.protocols.includes("udp")) {
     startUdpForward(rule);
   }
 }
 
 function stopPortForward(rule) {
-  if (rule.protocols.includes('tcp')) {
+  if (rule.protocols.includes("tcp")) {
     stopTcpForward(rule.id);
   }
-  if (rule.protocols.includes('udp')) {
+  if (rule.protocols.includes("udp")) {
     stopUdpForward(rule.id);
   }
 }
@@ -1876,6 +1889,11 @@ async function startTcpForward(rule) {
   }
 
   const server = net.createServer(async (localSocket) => {
+    // Disable Nagle's algorithm for this socket.
+    // This is crucial for responsive interactive sessions like SSH,
+    // preventing delays by sending small packets immediately.
+    //localSocket.setNoDelay(true);
+
     const targetSession = ipToSession.get(rule.vm);
     if (!targetSession) {
       console.log(
@@ -1903,9 +1921,11 @@ async function startTcpForward(rule) {
       // Pipe data between the local client and the VM
       localSocket.pipe(upstream);
       // downstream.pipe(localSocket); // Replaced with manual handler for debugging
-      downstream.on('data', (data) => {
+      downstream.on("data", (data) => {
         if (ENABLE_TRACE) {
-          console.log(`[R-TRACE-PIPE] Manually writing ${data.length} bytes to localSocket.`);
+          console.log(
+            `[R-TRACE-PIPE] Manually writing ${data.length} bytes to localSocket.`,
+          );
         }
         localSocket.write(data);
       });
@@ -1915,7 +1935,7 @@ async function startTcpForward(rule) {
           `[TCP PROXY] Local client disconnected from port ${rule.host_port}`,
         );
         // downstream.unpipe(localSocket); // Replaced with manual handler
-        downstream.removeAllListeners('data');
+        downstream.removeAllListeners("data");
         targetSession.reverseTcpConnections.delete(connKey);
       });
 
@@ -1964,25 +1984,31 @@ async function startUdpForward(rule) {
     );
   }
 
-  const hostSocket = dgram.createSocket('udp4');
+  const hostSocket = dgram.createSocket("udp4");
 
-  hostSocket.on('error', (err) => {
-    console.error(`[UDP PROXY] Server error on port ${rule.host_port}: ${err.message}`);
+  hostSocket.on("error", (err) => {
+    console.error(
+      `[UDP PROXY] Server error on port ${rule.host_port}: ${err.message}`,
+    );
     hostSocket.close();
     stopUdpForward(rule.id);
   });
 
-  hostSocket.on('message', (msg, rinfo) => {
+  hostSocket.on("message", (msg, rinfo) => {
     const targetSession = ipToSession.get(rule.vm);
     if (!targetSession) {
       if (ENABLE_DEBUG) {
-        console.log(`[UDP PROXY] VM ${rule.vm} not connected for incoming packet on port ${rule.host_port}`);
+        console.log(
+          `[UDP PROXY] VM ${rule.vm} not connected for incoming packet on port ${rule.host_port}`,
+        );
       }
       return;
     }
 
     if (ENABLE_DEBUG) {
-      console.log(`[UDP PROXY] Incoming packet on port ${rule.host_port} from ${rinfo.address}:${rinfo.port}, forwarding to VM ${rule.vm}:${rule.port}`);
+      console.log(
+        `[UDP PROXY] Incoming packet on port ${rule.host_port} from ${rinfo.address}:${rinfo.port}, forwarding to VM ${rule.vm}:${rule.port}`,
+      );
     }
     targetSession.forwardUdpPacket(msg, rule.port, rinfo, rule.id);
   });
@@ -2228,8 +2254,7 @@ async function proxyRequest(req, res, rule) {
         console.log(`[PROXY] Sending response (${fullResponse.length} bytes)`);
         if (ENABLE_DEBUG) {
           console.log(
-            `[PROXY] First 400 bytes (hex): ${
-              fullResponse.slice(0, 400).toString("hex")
+            `[PROXY] First 400 bytes (hex): ${fullResponse.slice(0, 400).toString("hex")
             }`,
           );
         }
