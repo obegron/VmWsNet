@@ -12,12 +12,7 @@ const crypto = require("crypto");
 // ==============================================================================
 
 // ENABLE_DEBUG: Set to true to enable general debug logging to the console.
-const ENABLE_DEBUG = true;
 
-// ENABLE_TRACE: Set to true to enable verbose packet-level trace logging.
-const ENABLE_TRACE = true;
-
-// RATE_LIMIT_KBPS: The maximum upload and download bandwidth for each VM in kilobytes per second.
 const RATE_LIMIT_KBPS = 1024;
 
 // MAX_CONNECTIONS_PER_IP: The maximum number of concurrent WebSocket connections allowed from a single IP address.
@@ -33,6 +28,12 @@ const ENABLE_VM_TO_VM = true;
 
 // --- Advanced Settings ---
 // ==============================================================================
+
+// ENABLE_DEBUG: Set to true to enable general debug logging to the console.
+const ENABLE_DEBUG = false;
+
+// ENABLE_TRACE: Set to true to enable verbose packet-level trace logging.
+const ENABLE_TRACE = false;
 
 // GATEWAY_IP: The IP address of the virtual gateway within the VM's network.
 const GATEWAY_IP = "10.0.2.2";
@@ -120,7 +121,7 @@ if (ENABLE_WSS) {
 
   httpsServer.listen(WS_PORT);
   console.log(
-    `Secure WebSocket (WSS) VPN server listening on port ${WS_PORT}`,
+    `Secure WebSocket (WSS) VPN server istening on port ${WS_PORT}`,
   );
 } else {
   wss = new WebSocket.Server({
@@ -1626,7 +1627,7 @@ class VMSession {
     } else if (msgType === 3) {
       console.log(`🌐 DHCP REQUEST from ${clientMACStr}`);
       this.sendDHCP(xid, clientMAC, 5, assignedIP);
-      console.log(`   DHCP ACK: ${assignedIP} ✅`);
+      console.log(`✅   DHCP ACK: ${assignedIP}`);
     }
   }
 
@@ -2016,7 +2017,9 @@ async function startUdpForward(rule) {
   });
 
   hostSocket.bind(rule.host_port, () => {
-    console.log(`[UDP PROXY] Server listening on port ${rule.host_port}`);
+    console.log(
+      `[UDP PROXY] Server listening on port 127.0.0.1:${rule.host_port}`,
+    );
     runningUdpProxies.set(rule.id, hostSocket);
     udpProxySockets.set(rule.id, hostSocket);
   });
@@ -2122,7 +2125,7 @@ const adminServer = http.createServer((req, res) => {
 });
 
 adminServer.listen(ADMIN_PORT, () => {
-  console.log(`💡 Admin UI listening on port ${ADMIN_PORT}`);
+  console.log(`💡 Admin UI listening on port http://127.0.0.1:${ADMIN_PORT}`);
 });
 
 function findProxyRule(req) {
@@ -2325,5 +2328,7 @@ const proxyServer = http.createServer((req, res) => {
 });
 
 proxyServer.listen(PROXY_PORT, () => {
-  console.log(`💡 Proxy server listening on port ${PROXY_PORT}`);
+  console.log(
+    `💡 Proxy server listening on port http://127.0.0.1:${PROXY_PORT}`,
+  );
 });
