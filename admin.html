@@ -51,8 +51,8 @@
   <h2>Reverse Proxy Rules</h2>
   <form id="add-rule-form">
       <div>
-        <label><input type="radio" name="type" value="http" checked> HTTP</label>
-        <label><input type="radio" name="type" value="tcp"> TCP</label>
+        <label><input type="radio" name="proxy_type" value="http" checked> HTTP Proxy</label>
+        <label><input type="radio" name="proxy_type" value="port"> Port Forward</label>
       </div>
       <div id="http-fields">
         <div class="form-group">
@@ -78,18 +78,25 @@
           <span class="optional-text">optional</span>
         </div>
       </div>
-      <div id="tcp-fields" style="display: none;">
+      <div id="port-fields" style="display: none;">
+        <div class="form-group">
+          <label>Protocol(s):</label>
+          <div>
+            <label><input type="checkbox" name="protocol" value="tcp" checked> TCP</label>
+            <label><input type="checkbox" name="protocol" value="udp"> UDP</label>
+          </div>
+        </div>
         <div class="form-group">
           <label for="host_port">Host Port:</label>
           <input type="text" id="host_port" placeholder="e.g., 4445">
         </div>
         <div class="form-group">
-          <label for="vm">VM:</label>
-          <select id="vm-tcp"></select>
+          <label for="vm-port">VM:</label>
+          <select id="vm-port"></select>
         </div>
         <div class="form-group">
-          <label for="port">VM Port:
-          <input type="text" id="port-tcp" placeholder="e.g., 80">
+          <label for="port-port">VM Port:</label>
+          <input type="text" id="port-port" placeholder="e.g., 80">
         </div>
       </div>
       <button type="submit">Add Rule</button>
@@ -118,9 +125,9 @@
       const sessions = await response.json();
       const tbody = document.querySelector('#sessions tbody');
       const vmDropdownHttp = document.getElementById('vm');
-      const vmDropdownTcp = document.getElementById('vm-tcp');
+      const vmDropdownPort = document.getElementById('vm-port');
       const selectedVmHttp = vmDropdownHttp.value;
-      const selectedVmTcp = vmDropdownTcp.value;
+      const selectedVmPort = vmDropdownPort.value;
 
       // Store current nickname input values to restore later
       const currentNicknameInputs = new Map();
@@ -130,7 +137,7 @@
 
       tbody.innerHTML = ''; // Clear and re-render the table structure
       vmDropdownHttp.innerHTML = '<option value="">Select VM</option>';
-      vmDropdownTcp.innerHTML = '<option value="">Select VM</option>';
+      vmDropdownPort.innerHTML = '<option value="">Select VM</option>';
 
       for (const session of sessions) {
         if (session.vmIP) { // Only add VMs with assigned IPs
@@ -160,49 +167,55 @@
           optionHttp.textContent = `${session.nickname || session.vmIP}`;
           vmDropdownHttp.appendChild(optionHttp);
 
-          const optionTcp = document.createElement('option');
-          optionTcp.value = session.vmIP;
-          optionTcp.textContent = `${session.nickname || session.vmIP}`;
-          vmDropdownTcp.appendChild(optionTcp);
+          const optionPort = document.createElement('option');
+          optionPort.value = session.vmIP;
+          optionPort.textContent = `${session.nickname || session.vmIP}`;
+          vmDropdownPort.appendChild(optionPort);
         }
       }
       vmDropdownHttp.value = selectedVmHttp;
-      vmDropdownTcp.value = selectedVmTcp;
+      vmDropdownPort.value = selectedVmPort;
     }
     fetchSessions();
     setInterval(fetchSessions, 5000);
 
-      const typeRadios = document.querySelectorAll('input[name="type"]');
+      const typeRadios = document.querySelectorAll('input[name="proxy_type"]');
       const httpFields = document.getElementById('http-fields');
-      const tcpFields = document.getElementById('tcp-fields');
+      const portFields = document.getElementById('port-fields');
 
       typeRadios.forEach(radio => {
         radio.addEventListener('change', () => {
-          if (document.querySelector('input[name="type"]:checked').value === 'tcp') {
+          if (document.querySelector('input[name="proxy_type"]:checked').value === 'port') {
             httpFields.style.display = 'none';
-            tcpFields.style.display = 'block';
+            portFields.style.display = 'block';
           } else {
             httpFields.style.display = 'block';
-            tcpFields.style.display = 'none';
+            portFields.style.display = 'none';
           }
         });
       });
 
       document.getElementById('add-rule-form').addEventListener('submit', async (e) => {
         e.preventDefault();
-        const type = document.querySelector('input[name="type"]:checked').value;
+        const proxyType = document.querySelector('input[name="proxy_type"]:checked').value;
         let rule;
 
-        if (type === 'tcp') {
+        if (proxyType === 'port') {
+          const protocols = Array.from(document.querySelectorAll('input[name="protocol"]:checked')).map(cb => cb.value);
+          if (protocols.length === 0) {
+            alert('Please select at least one protocol (TCP or UDP).');
+            return;
+          }
           rule = {
-            type,
-            vm: document.getElementById('vm-tcp').value,
-            port: parseInt(document.getElementById('port-tcp').value),
+            type: 'port',
+            protocols: protocols, // e.g., ['tcp'], ['udp'], or ['tcp', 'udp']
+            vm: document.getElementById('vm-port').value,
+            port: parseInt(document.getElementById('port-port').value),
             host_port: parseInt(document.getElementById('host_port').value),
           };
         } else { // http
           rule = {
-            type,
+            type: 'http',
             vm: document.getElementById('vm').value,
             port: parseInt(document.getElementById('port').value),
             vhost: document.getElementById('vhost').value,
@@ -244,14 +257,25 @@
       tbody.innerHTML = '';
       for (const rule of rules) {
         const row = document.createElement('tr');
-        let vhost, path, targetPath, testInfo;
-        if (rule.type === 'tcp') {
+        let vhost, path, targetPath, testInfo, typeDisplay;
+
+        if (rule.type === 'port') {
+          typeDisplay = 'Port Forward';
           vhost = rule.host_port;
-          path = '';
+          path = rule.protocols.join(', ').toUpperCase();
           targetPath = '';
-          const command = `telnet localhost ${rule.host_port}`;
-          testInfo = `<code>${command}</code> <button onclick="copyToClipboard('${command}')">Copy</button>`;
+          const tcpCommand = `telnet localhost ${rule.host_port}`;
+          const udpCommand = `echo "test" | nc -u -w1 localhost ${rule.host_port}`;
+          let commands = [];
+          if (rule.protocols.includes('tcp')) {
+            commands.push(`<code>${tcpCommand}</code> <button onclick="copyToClipboard('${tcpCommand}')">Copy TCP</button>`);
+          }
+          if (rule.protocols.includes('udp')) {
+            commands.push(`<code>${udpCommand}</code> <button onclick="copyToClipboard('${udpCommand}')">Copy UDP</button>`);
+          }
+          testInfo = commands.join('<br>');
         } else { // http
+          typeDisplay = 'HTTP';
           vhost = rule.vhost || '';
           path = rule.path || '';
           targetPath = rule.targetPath || '';
@@ -262,7 +286,7 @@
         }
 
         row.innerHTML = `
-          <td>${rule.type}</td>
+          <td>${typeDisplay}</td>
           <td>${vhost}</td>
           <td>${path}</td>
           <td>${rule.vm}:${rule.port}</td>

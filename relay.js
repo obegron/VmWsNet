@@ -11,8 +11,11 @@ const crypto = require("crypto");
 // --- Basic Settings ---
 // ==============================================================================
 
-// ENABLE_DEBUG: Set to true to enable verbose debug logging to the console.
+// ENABLE_DEBUG: Set to true to enable general debug logging to the console.
 const ENABLE_DEBUG = false;
+
+// ENABLE_TRACE: Set to true to enable verbose packet-level trace logging.
+const ENABLE_TRACE = false;
 
 // RATE_LIMIT_KBPS: The maximum upload and download bandwidth for each VM in kilobytes per second.
 const RATE_LIMIT_KBPS = 1024;
@@ -166,6 +169,7 @@ class VMSession {
     this.reverseTcpConnections = new Map();
     this.recentlyClosed = new Set();
     this.udpResponseListeners = new Map();
+    this.udpProxyNatTable = new Map();
 
     // Sliding Window Rate Limiter
     this.rateLimitWindowMs = 1000;
@@ -183,6 +187,30 @@ class VMSession {
     if (ENABLE_DEBUG) {
       console.log(`New session created for ${clientIP}`);
     }
+  }
+
+  forwardUdpPacket(payload, vmPort, clientRinfo, ruleId) {
+    // Find an available ephemeral port for the NAT table
+    let ephemeralPort = 40000 + Math.floor(Math.random() * 10000);
+    while (this.udpProxyNatTable.has(ephemeralPort)) {
+      ephemeralPort = 40000 + Math.floor(Math.random() * 10000);
+    }
+
+    this.udpProxyNatTable.set(ephemeralPort, { clientRinfo, ruleId, lastSeen: Date.now() });
+
+    // Clean up old entries after a timeout
+    setTimeout(() => {
+      const entry = this.udpProxyNatTable.get(ephemeralPort);
+      if (entry && (Date.now() - entry.lastSeen) > 30000) { // 30 second timeout
+        this.udpProxyNatTable.delete(ephemeralPort);
+      }
+    }, 31000);
+
+    if (ENABLE_DEBUG) {
+      console.log(`[UDP PROXY NAT] Creating NAT entry for ${clientRinfo.address}:${clientRinfo.port} on ephemeral port ${ephemeralPort}`);
+    }
+
+    this.sendUDPToVM(payload, ephemeralPort, vmPort, GATEWAY_IP, this.vmIP);
   }
 
   sendRSTForReverse(srcPort, dstPort, srcIP, dstIP, seqNum) {
@@ -245,6 +273,9 @@ class VMSession {
       this.reverseTcpConnections.set(connKey, conn);
 
       conn.upstream.on("data", (data) => {
+        if (ENABLE_DEBUG) {
+          console.log(`[UPSTREAM] Received ${data.length} bytes from client. Forwarding to VM.`);
+        }
         this.sendTCP(conn, data, srcPort, dstPort, srcIP, dstIP, {
           ack: true,
           psh: true,
@@ -283,7 +314,7 @@ class VMSession {
     const RST = (flags & 0x04) !== 0;
     const payload = ipPacket.slice(ihl + dataOffset);
 
-    if (ENABLE_DEBUG) {
+    if (ENABLE_TRACE) {
       const f = [
         SYN ? "SYN" : "",
 
@@ -358,7 +389,7 @@ class VMSession {
       const allZeros = payload.every((b) => b === 0);
 
       if (allSpaces || allZeros) {
-        if (ENABLE_DEBUG) {
+        if (ENABLE_TRACE) {
           console.log(
             `[R-TRACE] Ignoring 6-byte ${
               allSpaces ? "spaces" : "zeros"
@@ -374,32 +405,44 @@ class VMSession {
     }
 
     if (payload.length > 0) {
-      // Check if this is the data we expect
-      if (seqNum !== conn.vmSeq) {
-        if (ENABLE_DEBUG) {
-          console.log(
-            `[R-TRACE] Ignoring packet: seq=${seqNum} expected=${conn.vmSeq}`,
-          );
+      const isExpected = seqNum === conn.vmSeq;
+
+      if (isExpected) {
+        // This is the only good case. Process the payload.
+        if (ENABLE_TRACE) {
+          console.log(`[R-TRACE-DATA] Writing ${payload.length} bytes to downstream. Data (first 32 bytes): ${payload.toString('hex', 0, Math.min(payload.length, 32))}`);
         }
-        this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, srcIP, dstIP, {
-          ack: true,
-        });
-        return;
-      }
+        // Create a copy of the payload buffer. This is a workaround for a suspected
+        // bug in the stream/pipe implementation where the original buffer was being
+        // held and incorrectly re-transmitted. By creating a copy, we ensure the
+        // downstream pipe has its own private version of the data.
+        const payloadCopy = Buffer.from(payload);
+        const canWrite = conn.downstream.write(payloadCopy);
+        conn.vmSeq = (conn.vmSeq + payload.length) >>> 0;
 
-      // Write to downstream and wait for it to drain before ACKing
-      const canWrite = conn.downstream.write(payload);
-      conn.vmSeq = (conn.vmSeq + payload.length) >>> 0;
-
-      if (canWrite) {
-        this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, srcIP, dstIP, {
-          ack: true,
-        });
-      } else {
-        conn.downstream.once("drain", () => {
+        if (canWrite) {
           this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, srcIP, dstIP, {
             ack: true,
           });
+        } else {
+          conn.downstream.once("drain", () => {
+            this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, srcIP, dstIP, {
+              ack: true,
+            });
+          });
+        }
+      } else {
+        // This covers old (retransmitted) and future (out-of-order) packets.
+        // We just send an ACK and do nothing with the payload.
+        if (ENABLE_DEBUG) {
+          if (this.seqLessThan(seqNum, conn.vmSeq)) {
+            console.log(`[R-TRACE] Ignoring retransmitted packet: seq=${seqNum} but already have up to ${conn.vmSeq}`);
+          } else { // isFuture
+            console.log(`[R-TRACE] Ignoring out-of-order (future) packet: seq=${seqNum} expected=${conn.vmSeq}`);
+          }
+        }
+        this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, srcIP, dstIP, {
+          ack: true,
         });
       }
     }
@@ -410,17 +453,17 @@ class VMSession {
       );
 
       conn.state = "CLOSED";
-
       conn.downstream.end();
 
-      this.reverseTcpConnections.delete(connKey);
+      // A FIN consumes a sequence number, so we increment our expected sequence number.
+      conn.vmSeq = (conn.vmSeq + 1) >>> 0;
 
-      // Send final ACK for the FIN
-
+      // Send final ACK for the FIN. This uses the updated vmSeq.
       this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, srcIP, dstIP, {
         ack: true,
       });
 
+      this.reverseTcpConnections.delete(connKey);
       this.recentlyClosed.add(connKey);
 
       setTimeout(() => {
@@ -966,7 +1009,10 @@ class VMSession {
   }
 
   seqLessThan(a, b) {
-    return ((a - b) & 0xFFFFFFFF) > 0x7FFFFFFF;
+    // The subtraction (a - b) is cast to an unsigned 32-bit integer
+    // to correctly handle TCP sequence number wraparound. A result
+    // greater than 2^31 - 1 indicates that 'a' is "less than" 'b'.
+    return ((a - b) >>> 0) > 0x7FFFFFFF;
   }
 
   seqDiff(a, b) {
@@ -1088,39 +1134,67 @@ class VMSession {
   }
 
   sendTCP(conn, payload, srcPort, dstPort, srcIP, dstIP, flags = {}) {
-    const {
-      fin,
-      rst,
-      ack,
-      psh,
-      syn,
-    } = flags;
-    const tcpLen = 20 + payload.length;
-    const tcp = Buffer.alloc(tcpLen);
+    const MSS = 1460; // Maximum Segment Size for TCP over Ethernet
+    let offset = 0;
 
-    tcp.writeUInt16BE(srcPort, 0);
-    tcp.writeUInt16BE(dstPort, 2);
-    tcp.writeUInt32BE(conn.relaySeq, 4);
-    tcp.writeUInt32BE(conn.vmSeq, 8);
-    tcp[12] = 0x50;
-    tcp[13] = (ack ? 0x10 : 0) | (fin ? 0x01 : 0) | (rst ? 0x04 : 0) |
-      (psh && payload.length > 0 ? 0x08 : 0) | (syn ? 0x02 : 0);
-    tcp.writeUInt16BE(65535, 14);
-    tcp.writeUInt16BE(0, 16);
-    tcp.writeUInt16BE(0, 18);
+    // This loop handles TCP segmentation if the payload is larger than the MSS.
+    // It also handles zero-length payloads (like pure ACKs).
+    while (offset < payload.length || (offset === 0 && payload.length === 0)) {
+      const chunk = payload.slice(offset, offset + MSS);
+      offset += chunk.length;
 
-    if (payload.length > 0) payload.copy(tcp, 20);
+      const isLastSegment = offset >= payload.length;
 
-    const seqIncr = payload.length + (fin || syn ? 1 : 0);
-    if (seqIncr > 0 && !rst) {
-      conn.relaySeq = (conn.relaySeq + seqIncr) >>> 0;
+      // The PSH (push) flag should only be set on the final segment of a push.
+      const pshFlag = flags.psh && isLastSegment;
+      // The FIN flag also only applies to the very last segment of the connection.
+      const finFlag = flags.fin && isLastSegment;
+
+      // Create a flags object for this specific segment.
+      const segmentFlags = { ...flags, psh: pshFlag, fin: finFlag };
+
+      // The SYN flag should only be on the very first packet of a connection.
+      // We can infer this is not the first packet if we're segmenting.
+      if (offset > chunk.length) {
+        delete segmentFlags.syn;
+      }
+
+      const { fin, rst, ack, psh, syn } = segmentFlags;
+      const tcpLen = 20 + chunk.length;
+      const tcp = Buffer.alloc(tcpLen);
+
+      tcp.writeUInt16BE(srcPort, 0);
+      tcp.writeUInt16BE(dstPort, 2);
+      tcp.writeUInt32BE(conn.relaySeq, 4);
+      tcp.writeUInt32BE(conn.vmSeq, 8);
+      tcp[12] = 0x50; // Data Offset (5 words)
+      tcp[13] = (ack ? 0x10 : 0) | (fin ? 0x01 : 0) | (rst ? 0x04 : 0) |
+        (psh ? 0x08 : 0) | (syn ? 0x02 : 0);
+      tcp.writeUInt16BE(65535, 14); // Window Size
+      tcp.writeUInt16BE(0, 16); // Checksum (placeholder)
+      tcp.writeUInt16BE(0, 18); // Urgent Pointer
+
+      if (chunk.length > 0) {
+        chunk.copy(tcp, 20);
+      }
+
+      // Increment the sequence number by the size of the chunk for the next segment.
+      const seqIncr = chunk.length + (fin || syn ? 1 : 0);
+      if (seqIncr > 0 && !rst) {
+        conn.relaySeq = (conn.relaySeq + seqIncr) >>> 0;
+      }
+
+      const ip = this.buildIP(tcp, srcIP, dstIP, 6);
+      const cksum = this.calcTCPChecksum(ip);
+      ip.writeUInt16BE(cksum, 20 + 16); // Write checksum in TCP header within IP packet
+
+      this.sendIPToVM(ip);
+
+      // If we sent a zero-length payload (e.g., a pure ACK or SYN), we've done our one and only loop.
+      if (payload.length === 0) {
+        break;
+      }
     }
-
-    const ip = this.buildIP(tcp, srcIP, dstIP, 6);
-    const cksum = this.calcTCPChecksum(ip);
-    ip.writeUInt16BE(cksum, 20 + 16);
-
-    this.sendIPToVM(ip);
   }
 
   buildIP(payload, srcIP, dstIP, protocol) {
@@ -1216,6 +1290,24 @@ class VMSession {
     const dstIP = Array.from(ipPacket.slice(16, 20)).join(".");
 
     if (ENABLE_DEBUG) console.log(`📡 UDP: ${srcPort} -> ${dstPort}`);
+
+    // Check if this is a response for a proxied UDP connection
+    if (this.udpProxyNatTable.has(dstPort)) {
+      const { clientRinfo, ruleId } = this.udpProxyNatTable.get(dstPort);
+      const hostSocket = udpProxySockets.get(ruleId);
+
+      if (hostSocket) {
+        const payload = ipPacket.slice(28);
+        if (ENABLE_DEBUG) {
+          console.log(`[UDP PROXY NAT] Forwarding reply from VM to ${clientRinfo.address}:${clientRinfo.port}`);
+        }
+        hostSocket.send(payload, clientRinfo.port, clientRinfo.address);
+      }
+      
+      // We don't remove the NAT entry here to allow for multiple back-and-forth packets
+      // It will be cleaned up by its timeout
+      return; 
+    }
 
     if (dstPort === 67) {
       this.handleDHCP(ipPacket);
@@ -1727,8 +1819,10 @@ let nextRuleId = 1;
 const proxyRules = [];
 let nextProxyPort = 30000;
 const runningTcpProxies = new Map();
+const runningUdpProxies = new Map();
+const udpProxySockets = new Map();
 
-function stopTcpProxy(ruleId) {
+function stopTcpForward(ruleId) {
   if (runningTcpProxies.has(ruleId)) {
     if (ENABLE_DEBUG) {
       console.log(`[TCP PROXY] Stopping proxy for rule ${ruleId}`);
@@ -1739,7 +1833,37 @@ function stopTcpProxy(ruleId) {
   }
 }
 
-async function startTcpProxy(rule) {
+function stopUdpForward(ruleId) {
+  if (runningUdpProxies.has(ruleId)) {
+    if (ENABLE_DEBUG) {
+      console.log(`[UDP PROXY] Stopping proxy for rule ${ruleId}`);
+    }
+    const server = runningUdpProxies.get(ruleId);
+    server.close();
+    runningUdpProxies.delete(ruleId);
+    udpProxySockets.delete(ruleId);
+  }
+}
+
+function startPortForward(rule) {
+  if (rule.protocols.includes('tcp')) {
+    startTcpForward(rule);
+  }
+  if (rule.protocols.includes('udp')) {
+    startUdpForward(rule);
+  }
+}
+
+function stopPortForward(rule) {
+  if (rule.protocols.includes('tcp')) {
+    stopTcpForward(rule.id);
+  }
+  if (rule.protocols.includes('udp')) {
+    stopUdpForward(rule.id);
+  }
+}
+
+async function startTcpForward(rule) {
   if (runningTcpProxies.has(rule.id)) {
     console.log(`[TCP PROXY] Proxy for rule ${rule.id} already running.`);
     return;
@@ -1778,13 +1902,20 @@ async function startTcpProxy(rule) {
 
       // Pipe data between the local client and the VM
       localSocket.pipe(upstream);
-      downstream.pipe(localSocket);
+      // downstream.pipe(localSocket); // Replaced with manual handler for debugging
+      downstream.on('data', (data) => {
+        if (ENABLE_TRACE) {
+          console.log(`[R-TRACE-PIPE] Manually writing ${data.length} bytes to localSocket.`);
+        }
+        localSocket.write(data);
+      });
 
       localSocket.on("close", () => {
         console.log(
           `[TCP PROXY] Local client disconnected from port ${rule.host_port}`,
         );
-        downstream.unpipe(localSocket);
+        // downstream.unpipe(localSocket); // Replaced with manual handler
+        downstream.removeAllListeners('data');
         targetSession.reverseTcpConnections.delete(connKey);
       });
 
@@ -1818,6 +1949,48 @@ async function startTcpProxy(rule) {
     console.error(
       `[TCP PROXY] Server error on port ${rule.host_port}: ${err.message}`,
     );
+  });
+}
+
+async function startUdpForward(rule) {
+  if (runningUdpProxies.has(rule.id)) {
+    console.log(`[UDP PROXY] Proxy for rule ${rule.id} already running.`);
+    return;
+  }
+
+  if (ENABLE_DEBUG) {
+    console.log(
+      `[UDP PROXY] Starting proxy for rule ${rule.id}: host port ${rule.host_port} -> ${rule.vm}:${rule.port}`,
+    );
+  }
+
+  const hostSocket = dgram.createSocket('udp4');
+
+  hostSocket.on('error', (err) => {
+    console.error(`[UDP PROXY] Server error on port ${rule.host_port}: ${err.message}`);
+    hostSocket.close();
+    stopUdpForward(rule.id);
+  });
+
+  hostSocket.on('message', (msg, rinfo) => {
+    const targetSession = ipToSession.get(rule.vm);
+    if (!targetSession) {
+      if (ENABLE_DEBUG) {
+        console.log(`[UDP PROXY] VM ${rule.vm} not connected for incoming packet on port ${rule.host_port}`);
+      }
+      return;
+    }
+
+    if (ENABLE_DEBUG) {
+      console.log(`[UDP PROXY] Incoming packet on port ${rule.host_port} from ${rinfo.address}:${rinfo.port}, forwarding to VM ${rule.vm}:${rule.port}`);
+    }
+    targetSession.forwardUdpPacket(msg, rule.port, rinfo, rule.id);
+  });
+
+  hostSocket.bind(rule.host_port, () => {
+    console.log(`[UDP PROXY] Server listening on port ${rule.host_port}`);
+    runningUdpProxies.set(rule.id, hostSocket);
+    udpProxySockets.set(rule.id, hostSocket);
   });
 }
 
@@ -1885,8 +2058,10 @@ const adminServer = http.createServer((req, res) => {
       const rule = JSON.parse(body);
       rule.id = nextRuleId++;
       proxyRules.push(rule);
-      if (rule.type === "tcp") {
-        startTcpProxy(rule);
+      if (rule.type === "port") {
+        startPortForward(rule);
+      } else if (rule.type === "http") {
+        // TODO: Implement startHttpProxy if needed, or handle here
       }
       res.writeHead(201);
       res.end();
@@ -1896,8 +2071,14 @@ const adminServer = http.createServer((req, res) => {
     const index = proxyRules.findIndex((rule) => rule.id === id);
     if (index !== -1) {
       const rule = proxyRules[index];
-      if (rule.type === "tcp") {
-        stopTcpProxy(rule.id);
+      if (rule.type === "port") {
+        stopPortForward(rule);
+      } else if (rule.type === "http") {
+        // TODO: Implement stopHttpProxy if needed
+      } else {
+        // Legacy support for old tcp/udp rules
+        stopTcpForward(rule.id);
+        stopUdpForward(rule.id);
       }
       proxyRules.splice(index, 1);
       res.writeHead(204);
