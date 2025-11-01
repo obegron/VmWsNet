@@ -410,56 +410,58 @@ class VMSession {
       }
     }
 
+    if (payload.length > 0) {
+      // Check if this is old, already-processed data (a retransmission)
+      if (this.seqLessThan(seqNum, conn.vmSeq)) {
+        if (ENABLE_DEBUG) {
+          console.log(
+            `[R-TRACE] Ignoring retransmitted packet: seq=${seqNum} but already have up to ${conn.vmSeq}`,
+          );
+        }
+        // Send a fresh ACK to show what we've received so far. This should stop the retransmissions.
+        this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, srcIP, dstIP, {
+          ack: true,
+        });
+        return; // ← CRITICAL: Must return here, don't process the payload!
+      }
 
-if (payload.length > 0) {
-  // Check if this is old, already-processed data (a retransmission)
-  if (this.seqLessThan(seqNum, conn.vmSeq)) {
-    if (ENABLE_DEBUG) {
-      console.log(
-        `[R-TRACE] Ignoring retransmitted packet: seq=${seqNum} but already have up to ${conn.vmSeq}`,
-      );
+      // If the sequence number is from the future, the packets are out of order.
+      // IMPORTANT: Use seqLessThan for proper wraparound handling
+      if (!this.seqLessThan(seqNum, conn.vmSeq) && seqNum !== conn.vmSeq) {
+        if (ENABLE_DEBUG) {
+          console.log(
+            `[R-TRACE] Ignoring out-of-order (future) packet: seq=${seqNum} expected=${conn.vmSeq}`,
+          );
+        }
+        this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, srcIP, dstIP, {
+          ack: true,
+        });
+        return; // ← CRITICAL: Must return here too!
+      }
+
+      // If we reach here, seqNum === conn.vmSeq. This is the expected in-order packet.
+      if (ENABLE_DEBUG) {
+        console.log(
+          `[R-TRACE-DATA] Writing ${payload.length} bytes to downstream. Data (first 32 bytes): ${payload.toString("hex", 0, Math.min(payload.length, 32))
+          }`,
+        );
+      }
+
+      const canWrite = conn.downstream.write(payload);
+      conn.vmSeq = (conn.vmSeq + payload.length) >>> 0;
+
+      if (canWrite) {
+        this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, srcIP, dstIP, {
+          ack: true,
+        });
+      } else {
+        conn.downstream.once("drain", () => {
+          this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, srcIP, dstIP, {
+            ack: true,
+          });
+        });
+      }
     }
-    // Send a fresh ACK to show what we've received so far. This should stop the retransmissions.
-    this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, srcIP, dstIP, {
-      ack: true,
-    });
-    return; // ← CRITICAL: Must return here, don't process the payload!
-  }
-
-  // If the sequence number is from the future, the packets are out of order.
-  // IMPORTANT: Use seqLessThan for proper wraparound handling
-  if (!this.seqLessThan(seqNum, conn.vmSeq) && seqNum !== conn.vmSeq) {
-    if (ENABLE_DEBUG) {
-      console.log(
-        `[R-TRACE] Ignoring out-of-order (future) packet: seq=${seqNum} expected=${conn.vmSeq}`
-      );
-    }
-    this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, srcIP, dstIP, {
-      ack: true,
-    });
-    return; // ← CRITICAL: Must return here too!
-  }
-
-  // If we reach here, seqNum === conn.vmSeq. This is the expected in-order packet.
-  if (ENABLE_DEBUG) { 
-    console.log(`[R-TRACE-DATA] Writing ${payload.length} bytes to downstream. Data (first 32 bytes): ${payload.toString('hex', 0, Math.min(payload.length, 32))}`); 
-  }
-  
-  const canWrite = conn.downstream.write(payload);
-  conn.vmSeq = (conn.vmSeq + payload.length) >>> 0;
-
-  if (canWrite) {
-    this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, srcIP, dstIP, {
-      ack: true,
-    });
-  } else {
-    conn.downstream.once("drain", () => {
-      this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, srcIP, dstIP, {
-        ack: true,
-      });
-    });
-  }
-}
 
     if (FIN) {
       console.log(
