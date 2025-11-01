@@ -34,9 +34,10 @@
     }
 
     body {
-      font-family: sans-serif;
+      font-family: -apple-system,BlinkMacSystemFont,avenir next,avenir,segoe ui,helvetica neue,Cantarell,Ubuntu,roboto,noto,helvetica,arial,sans-serif;
       background-color: var(--ctp-base);
       color: var(--ctp-text);
+      margin: 50px;
     }
 
     table {
@@ -110,7 +111,11 @@
       opacity: 1;
     }
 
-    h1, h2 {
+    h1 {
+      color: var(--ctp-rosewater);
+    }
+
+    h2 {
       color: var(--ctp-lavender);
     }
 
@@ -163,6 +168,10 @@
       border-radius: 4px;
       background-color: var(--ctp-crust);
       color: var(--ctp-text);
+    }
+
+    .copy-button {
+      margin-bottom: 5px; /* Add some space below each copy button */
     }
 
     /* Style for radio buttons and checkboxes */
@@ -241,7 +250,7 @@
 </head>
 
 <body>
-  <h1>JSLinux Relay Admin</h1>
+  <h1>rootlessRelay Admin</h1>
   <h2>Connected Clients</h2>
   <table id="sessions">
     <thead>
@@ -290,14 +299,14 @@
     </div>
     <div id="port-fields" style="display: none;">
       <div class="form-group">
-        <label>Protocol(s):</label>
+        <label style="visibility: hidden;">Protocol(s):</label>
         <div>
           <label><input type="checkbox" name="protocol" value="tcp" checked> TCP</label>
           <label><input type="checkbox" name="protocol" value="udp"> UDP</label>
         </div>
       </div>
       <div class="form-group">
-        <label for="host_port">Host Port:</label>
+        <label for="host_port">Local Port:</label>
         <input type="text" id="host_port" placeholder="e.g., 4445">
       </div>
       <div class="form-group">
@@ -305,7 +314,7 @@
         <select id="vm-port"></select>
       </div>
       <div class="form-group">
-        <label for="port-port">VM Port:</label>
+        <label for="port-port">Remote Port:</label>
         <input type="text" id="port-port" placeholder="e.g., 80">
       </div>
       <div class="common-buttons">
@@ -358,9 +367,7 @@
           const row = document.createElement('tr');
           row.innerHTML = `
             <td>
-              <span id="display-nickname-${session.sessionId}">${session.nickname || session.sessionId}</span><br>
-              <input type="text" id="new-nickname-input-${session.sessionId}" placeholder="New Nickname" onkeydown="if(event.keyCode===13) setNickname('${session.sessionId}')" class="catppuccin-input">
-              <button onclick="setNickname('${session.sessionId}')" class="catppuccin-button">Set</button>
+              <span id="display-nickname-${session.sessionId}" onclick="editNickname('${session.sessionId}', '${session.nickname || ''}')" style="cursor: pointer;">${session.nickname || session.sessionId}</span>
             </td>
             <td>${session.clientIP}</td>
             <td>${session.vmIP}</td>
@@ -420,12 +427,27 @@
           alert('Please select at least one protocol (TCP or UDP).');
           return;
         }
+        const hostPort = parseInt(document.getElementById('host_port').value);
+
+        // Fetch existing rules to check for duplicates
+        const existingRulesResponse = await fetch('/api/rules');
+        const existingRules = await existingRulesResponse.json();
+
+        const isDuplicatePort = existingRules.some(rule =>
+          rule.type === 'port' && rule.host_port === hostPort
+        );
+
+        if (isDuplicatePort) {
+          alert(`A port forward rule already exists for local port ${hostPort}.`);
+          return;
+        }
+
         rule = {
           type: 'port',
           protocols: protocols, // e.g., ['tcp'], ['udp'], or ['tcp', 'udp']
           vm: document.getElementById('vm-port').value,
           port: parseInt(document.getElementById('port-port').value),
-          host_port: parseInt(document.getElementById('host_port').value),
+          host_port: hostPort,
         };
       } else { // http
         rule = {
@@ -483,10 +505,10 @@
           const udpCommand = `echo "test" | nc -u -w1 localhost ${rule.host_port}`;
           let commands = [];
           if (rule.protocols.includes('tcp')) {
-            commands.push(`<code>${tcpCommand}</code> <button onclick="copyToClipboard('${tcpCommand}')" class="catppuccin-button">Copy TCP</button>`);
+            commands.push(`<button onclick="copyToClipboard('${tcpCommand}')" class="catppuccin-button copy-button">Copy</button> <code>${tcpCommand}</code>`);
           }
           if (rule.protocols.includes('udp')) {
-            commands.push(`<code>${udpCommand}</code> <button onclick="copyToClipboard('${udpCommand}')" class="catppuccin-button">Copy UDP</button>`);
+            commands.push(`<button onclick="copyToClipboard('${udpCommand}')" class="catppuccin-button copy-button">Copy</button> <code>${udpCommand}</code>`);
           }
           testInfo = commands.join('<br>');
         } else { // http
@@ -497,7 +519,7 @@
           const proxyUrl = `http://localhost:8080${path}`;
           const link = rule.vhost ? `http://${rule.vhost}:8080${path}` : proxyUrl;
           const curlCommand = rule.vhost ? `curl -H "Host: ${rule.vhost}" ${proxyUrl}` : `curl ${proxyUrl}`;
-          testInfo = `<a href="${link}" target="_blank">${link}</a><br><code>${curlCommand}</code> <button onclick="copyToClipboard('${curlCommand}')" class="catppuccin-button">Copy</button>`;
+          testInfo = `<button onclick="copyToClipboard('${curlCommand}')" class="catppuccin-button">Copy</button> <code>${curlCommand}</code><br><a href="${link}" target="_blank">${link}</a>`;
         }
 
         row.innerHTML = `
@@ -518,18 +540,54 @@
       loadRules();
     }
 
-    async function setNickname(sessionId) {
-      const newNicknameInput = document.getElementById(`new-nickname-input-${sessionId}`);
-      const nickname = newNicknameInput.value;
+    async function setNickname(sessionId, nickname) {
       if (nickname) { // Only send if nickname is not empty
         await fetch(`/api/sessions/${sessionId}/nickname`, {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({nickname}),
         });
-        newNicknameInput.value = ''; // Clear the input field
-        fetchSessions(); // Refresh sessions to show updated nickname
+      } else {
+        // If nickname is empty, delete it
+        await fetch(`/api/sessions/${sessionId}/nickname`, {
+          method: 'DELETE',
+        });
       }
+      fetchSessions(); // Refresh sessions to show updated nickname
+    }
+
+    function editNickname(sessionId, currentNickname) {
+      const displaySpan = document.getElementById(`display-nickname-${sessionId}`);
+      const originalContent = displaySpan.innerHTML;
+
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.value = currentNickname;
+      input.className = 'catppuccin-input';
+      input.style.width = 'auto'; // Adjust width as needed
+
+      displaySpan.innerHTML = '';
+      displaySpan.appendChild(input);
+      input.focus();
+
+      const handleSave = async () => {
+        const newNickname = input.value.trim();
+        await setNickname(sessionId, newNickname);
+        displaySpan.innerHTML = originalContent; // Revert to original content temporarily
+        fetchSessions(); // Refresh to show actual new nickname
+      };
+
+      input.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          handleSave();
+        }
+      });
+
+      input.addEventListener('blur', () => {
+        // If the input loses focus, save the nickname (or delete if empty)
+        handleSave();
+      });
     }
 
     async function addSshPortForward() {
