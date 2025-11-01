@@ -1,17 +1,54 @@
 <!DOCTYPE html>
 <html>
+
 <head>
-  <title>JSLinux Relay Admin</title>
+  <title>rootlessRelay admin</title>
   <style>
-    body { font-family: sans-serif; }
-    table { border-collapse: collapse; width: 100%; }
-    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-    th { background-color: #f2f2f2; }
-    form { margin-bottom: 20px; }
-    .form-group { margin-bottom: 10px; display: flex; flex-direction: column; }
-    .form-group label { margin-bottom: 5px; }
-    .form-group input[type="text"], .form-group select { width: 200px; }
-    .optional-text { font-size: 0.8em; color: #666; margin-top: 2px; }
+    body {
+      font-family: sans-serif;
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+    }
+
+    th,
+    td {
+      border: 1px solid #ddd;
+      padding: 8px;
+      text-align: left;
+    }
+
+    th {
+      background-color: #f2f2f2;
+    }
+
+    form {
+      margin-bottom: 20px;
+    }
+
+    .form-group {
+      margin-bottom: 10px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .form-group label {
+      margin-bottom: 5px;
+    }
+
+    .form-group input[type="text"],
+    .form-group select {
+      width: 200px;
+    }
+
+    .optional-text {
+      font-size: 0.8em;
+      color: #666;
+      margin-top: 2px;
+    }
+
     .toaster-notification {
       position: fixed;
       bottom: 20px;
@@ -25,14 +62,18 @@
       transition: opacity 0.5s ease-in-out;
       z-index: 1000;
     }
+
     .toaster-notification.show {
       opacity: 1;
     }
+
     .common-buttons button {
-      margin-right: 10px; /* Space between buttons */
+      margin-right: 10px;
+      /* Space between buttons */
     }
   </style>
 </head>
+
 <body>
   <h1>JSLinux Relay Admin</h1>
   <h2>Connected Clients</h2>
@@ -53,61 +94,61 @@
 
   <h2>Reverse Proxy Rules</h2>
   <form id="add-rule-form">
-      <div>
-        <label><input type="radio" name="proxy_type" value="http" checked> HTTP Proxy</label>
-        <label><input type="radio" name="proxy_type" value="port"> Port Forward</label>
+    <div>
+      <label><input type="radio" name="proxy_type" value="http" checked> HTTP Proxy</label>
+      <label><input type="radio" name="proxy_type" value="port"> Port Forward</label>
+    </div>
+    <div id="http-fields">
+      <div class="form-group">
+        <label for="vm">VM:</label>
+        <select id="vm"></select>
       </div>
-      <div id="http-fields">
-        <div class="form-group">
-          <label for="vm">VM:</label>
-          <select id="vm"></select>
-        </div>
-        <div class="form-group">
-          <label for="port">VM Port:</label>
-          <input type="text" id="port" placeholder="e.g., 80">
-        </div>
-        <div class="form-group">
-          <label for="path">Path:</label>
-          <input type="text" id="path" placeholder="e.g., /">
-        </div>
-        <div class="form-group">
-          <label for="targetPath">Target Path:</label>
-          <input type="text" id="targetPath" placeholder="e.g., /app">
-          <span class="optional-text">optional</span>
-        </div>
-        <div class="form-group">
-          <label for="vhost">VHost:</label>
-          <input type="text" id="vhost" placeholder="e.g., domain.com">
-          <span class="optional-text">optional</span>
-        </div>
+      <div class="form-group">
+        <label for="port">VM Port:</label>
+        <input type="text" id="port" placeholder="e.g., 80">
       </div>
-      <div id="port-fields" style="display: none;">
-        <div class="form-group">
-          <label>Protocol(s):</label>
-          <div>
-            <label><input type="checkbox" name="protocol" value="tcp" checked> TCP</label>
-            <label><input type="checkbox" name="protocol" value="udp"> UDP</label>
-          </div>
-        </div>
-        <div class="form-group">
-          <label for="host_port">Host Port:</label>
-          <input type="text" id="host_port" placeholder="e.g., 4445">
-        </div>
-        <div class="form-group">
-          <label for="vm-port">VM:</label>
-          <select id="vm-port"></select>
-        </div>
-        <div class="form-group">
-          <label for="port-port">VM Port:</label>
-          <input type="text" id="port-port" placeholder="e.g., 80">
-        </div>
-        <div class="common-buttons">
-          <button type="button" onclick="addSshPortForward()">Add SSH (2222 -> VM:22)</button>
-          <button type="button" onclick="addHttpPortForward()">Add HTTP (8888 -> VM:80)</button>
+      <div class="form-group">
+        <label for="path">Path:</label>
+        <input type="text" id="path" placeholder="e.g., /">
+      </div>
+      <div class="form-group">
+        <label for="targetPath">Target Path:</label>
+        <input type="text" id="targetPath" placeholder="e.g., /app">
+        <span class="optional-text">optional</span>
+      </div>
+      <div class="form-group">
+        <label for="vhost">VHost:</label>
+        <input type="text" id="vhost" placeholder="e.g., domain.com">
+        <span class="optional-text">optional</span>
+      </div>
+    </div>
+    <div id="port-fields" style="display: none;">
+      <div class="form-group">
+        <label>Protocol(s):</label>
+        <div>
+          <label><input type="checkbox" name="protocol" value="tcp" checked> TCP</label>
+          <label><input type="checkbox" name="protocol" value="udp"> UDP</label>
         </div>
       </div>
-      <button type="submit">Add Rule</button>
-    </form>
+      <div class="form-group">
+        <label for="host_port">Host Port:</label>
+        <input type="text" id="host_port" placeholder="e.g., 4445">
+      </div>
+      <div class="form-group">
+        <label for="vm-port">VM:</label>
+        <select id="vm-port"></select>
+      </div>
+      <div class="form-group">
+        <label for="port-port">VM Port:</label>
+        <input type="text" id="port-port" placeholder="e.g., 80">
+      </div>
+      <div class="common-buttons">
+        <button type="button" onclick="addSshPortForward()">Add SSH (2222 -> VM:22)</button>
+        <button type="button" onclick="addHttpPortForward()">Add HTTP (8888 -> VM:80)</button>
+      </div>
+    </div>
+    <button type="submit">Add Rule</button>
+  </form>
   <table id="rules">
     <thead>
       <tr>
@@ -186,78 +227,78 @@
     fetchSessions();
     setInterval(fetchSessions, 5000);
 
-      const typeRadios = document.querySelectorAll('input[name="proxy_type"]');
-      const httpFields = document.getElementById('http-fields');
-      const portFields = document.getElementById('port-fields');
+    const typeRadios = document.querySelectorAll('input[name="proxy_type"]');
+    const httpFields = document.getElementById('http-fields');
+    const portFields = document.getElementById('port-fields');
 
-      typeRadios.forEach(radio => {
-        radio.addEventListener('change', () => {
-          if (document.querySelector('input[name="proxy_type"]:checked').value === 'port') {
-            httpFields.style.display = 'none';
-            portFields.style.display = 'block';
-          } else {
-            httpFields.style.display = 'block';
-            portFields.style.display = 'none';
-          }
-        });
-      });
-
-      document.getElementById('add-rule-form').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const proxyType = document.querySelector('input[name="proxy_type"]:checked').value;
-        let rule;
-
-        if (proxyType === 'port') {
-          const protocols = Array.from(document.querySelectorAll('input[name="protocol"]:checked')).map(cb => cb.value);
-          if (protocols.length === 0) {
-            alert('Please select at least one protocol (TCP or UDP).');
-            return;
-          }
-          rule = {
-            type: 'port',
-            protocols: protocols, // e.g., ['tcp'], ['udp'], or ['tcp', 'udp']
-            vm: document.getElementById('vm-port').value,
-            port: parseInt(document.getElementById('port-port').value),
-            host_port: parseInt(document.getElementById('host_port').value),
-          };
-        } else { // http
-          rule = {
-            type: 'http',
-            vm: document.getElementById('vm').value,
-            port: parseInt(document.getElementById('port').value),
-            vhost: document.getElementById('vhost').value,
-            path: document.getElementById('path').value,
-            targetPath: document.getElementById('targetPath').value,
-          };
+    typeRadios.forEach(radio => {
+      radio.addEventListener('change', () => {
+        if (document.querySelector('input[name="proxy_type"]:checked').value === 'port') {
+          httpFields.style.display = 'none';
+          portFields.style.display = 'block';
+        } else {
+          httpFields.style.display = 'block';
+          portFields.style.display = 'none';
         }
-
-        await fetch('/api/rules', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(rule),
-        });
-        loadRules();
       });
+    });
 
-      function showToaster(message, isError = false) {
-        const toaster = document.getElementById('toaster-notification');
-        toaster.textContent = message;
-        toaster.style.backgroundColor = isError ? '#d9534f' : '#5cb85c'; // Red for error, green for success
-        toaster.classList.add('show');
-        setTimeout(() => {
-          toaster.classList.remove('show');
-        }, 3000);
+    document.getElementById('add-rule-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const proxyType = document.querySelector('input[name="proxy_type"]:checked').value;
+      let rule;
+
+      if (proxyType === 'port') {
+        const protocols = Array.from(document.querySelectorAll('input[name="protocol"]:checked')).map(cb => cb.value);
+        if (protocols.length === 0) {
+          alert('Please select at least one protocol (TCP or UDP).');
+          return;
+        }
+        rule = {
+          type: 'port',
+          protocols: protocols, // e.g., ['tcp'], ['udp'], or ['tcp', 'udp']
+          vm: document.getElementById('vm-port').value,
+          port: parseInt(document.getElementById('port-port').value),
+          host_port: parseInt(document.getElementById('host_port').value),
+        };
+      } else { // http
+        rule = {
+          type: 'http',
+          vm: document.getElementById('vm').value,
+          port: parseInt(document.getElementById('port').value),
+          vhost: document.getElementById('vhost').value,
+          path: document.getElementById('path').value,
+          targetPath: document.getElementById('targetPath').value,
+        };
       }
 
-      function copyToClipboard(text) {
-        navigator.clipboard.writeText(text).then(() => {
-          showToaster('Copied to clipboard!');
-        }, (err) => {
-          showToaster('Failed to copy: ' + err, true);
-        });
-      }
+      await fetch('/api/rules', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(rule),
+      });
+      loadRules();
+    });
 
-      async function loadRules() {
+    function showToaster(message, isError = false) {
+      const toaster = document.getElementById('toaster-notification');
+      toaster.textContent = message;
+      toaster.style.backgroundColor = isError ? '#d9534f' : '#5cb85c'; // Red for error, green for success
+      toaster.classList.add('show');
+      setTimeout(() => {
+        toaster.classList.remove('show');
+      }, 3000);
+    }
+
+    function copyToClipboard(text) {
+      navigator.clipboard.writeText(text).then(() => {
+        showToaster('Copied to clipboard!');
+      }, (err) => {
+        showToaster('Failed to copy: ' + err, true);
+      });
+    }
+
+    async function loadRules() {
       const response = await fetch('/api/rules');
       const rules = await response.json();
       const tbody = document.querySelector('#rules tbody');
@@ -306,7 +347,7 @@
     }
 
     async function deleteRule(id) {
-      await fetch(`/api/rules/${id}`, { method: 'DELETE' });
+      await fetch(`/api/rules/${id}`, {method: 'DELETE'});
       loadRules();
     }
 
@@ -316,8 +357,8 @@
       if (nickname) { // Only send if nickname is not empty
         await fetch(`/api/sessions/${sessionId}/nickname`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ nickname }),
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({nickname}),
         });
         newNicknameInput.value = ''; // Clear the input field
         fetchSessions(); // Refresh sessions to show updated nickname
@@ -357,4 +398,5 @@
     loadRules();
   </script>
 </body>
+
 </html>
