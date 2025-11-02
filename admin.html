@@ -34,7 +34,7 @@
     }
 
     body {
-      font-family: -apple-system,BlinkMacSystemFont,avenir next,avenir,segoe ui,helvetica neue,Cantarell,Ubuntu,roboto,noto,helvetica,arial,sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, avenir next, avenir, segoe ui, helvetica neue, Cantarell, Ubuntu, roboto, noto, helvetica, arial, sans-serif;
       background-color: var(--ctp-base);
       color: var(--ctp-text);
       margin: 50px;
@@ -61,9 +61,6 @@
 
     form {
       margin-bottom: 20px;
-      background-color: var(--ctp-mantle);
-      padding: 15px;
-      border-radius: 8px;
     }
 
     .form-group {
@@ -95,7 +92,7 @@
 
     .toaster-notification {
       position: fixed;
-      bottom: 20px;
+      top: 20px;
       left: 50%;
       transform: translateX(-50%);
       background-color: var(--ctp-green);
@@ -145,7 +142,8 @@
       border-radius: 5px;
       cursor: pointer;
       transition: background-color 0.2s ease;
-      margin-right: 10px; /* Space between buttons */
+      margin-right: 10px;
+      /* Space between buttons */
     }
 
     .common-buttons button:hover,
@@ -171,7 +169,8 @@
     }
 
     .copy-button {
-      margin-bottom: 5px; /* Add some space below each copy button */
+      margin-bottom: 5px;
+      /* Add some space below each copy button */
     }
 
     /* Style for radio buttons and checkboxes */
@@ -192,7 +191,8 @@
     }
 
     input[type="radio"] {
-      border-radius: 50%; /* Make radio buttons circular */
+      border-radius: 50%;
+      /* Make radio buttons circular */
     }
 
     input[type="radio"]:checked,
@@ -215,7 +215,8 @@
     }
 
     input[type="checkbox"]:checked::before {
-      content: '\2713'; /* Checkmark character */
+      content: '\2713';
+      /* Checkmark character */
       display: block;
       color: var(--ctp-crust);
       font-size: 12px;
@@ -229,7 +230,8 @@
     /* Adjust spacing for common buttons */
     .common-buttons {
       display: flex;
-      gap: 10px; /* Space between buttons */
+      gap: 10px;
+      /* Space between buttons */
       margin-top: 10px;
       margin-bottom: 10px;
     }
@@ -268,77 +270,82 @@
   </table>
 
   <h2>Reverse Proxy Rules</h2>
-  <form id="add-rule-form">
-    <div>
-      <label><input type="radio" name="proxy_type" value="http" checked> HTTP Proxy</label>
-      <label><input type="radio" name="proxy_type" value="port"> Port Forward</label>
-    </div>
-    <div id="http-fields">
-      <div class="form-group">
-        <label for="vm">VM:</label>
-        <select id="vm"></select>
+  <div
+    style="background-color: var(--ctp-mantle); padding: 20px; border-radius: 8px; display: flex; gap: 20px; align-items: flex-start;">
+    <form id="add-rule-form">
+      <div>
+        <label><input type="radio" name="proxy_type" value="http" checked> HTTP Proxy</label>
+        <label><input type="radio" name="proxy_type" value="port"> Port Forward</label>
       </div>
-      <div class="form-group">
-        <label for="port">VM Port:</label>
-        <input type="text" id="port" placeholder="e.g., 80">
-      </div>
-      <div class="form-group">
-        <label for="path">Path:</label>
-        <input type="text" id="path" placeholder="e.g., /">
-      </div>
-      <div class="form-group">
-        <label for="targetPath">Target Path:</label>
-        <input type="text" id="targetPath" placeholder="e.g., /app">
-        <span class="optional-text">optional</span>
-      </div>
-      <div class="form-group">
-        <label for="vhost">VHost:</label>
-        <input type="text" id="vhost" placeholder="e.g., domain.com">
-        <span class="optional-text">optional</span>
-      </div>
-    </div>
-    <div id="port-fields" style="display: none;">
-      <div class="form-group">
-        <label style="visibility: hidden;">Protocol(s):</label>
-        <div>
-          <label><input type="checkbox" name="protocol" value="tcp" checked> TCP</label>
-          <label><input type="checkbox" name="protocol" value="udp"> UDP</label>
+      <div id="http-fields">
+        <div class="form-group">
+          <label for="vm">&nbsp;</label>
+          <select id="vm"></select>
+        </div>
+        <div class="form-group">
+          <label for="port">VM Port:</label>
+          <input type="text" id="port" placeholder="e.g., 80">
+        </div>
+        <div class="form-group">
+          <label for="path">Path:</label>
+          <input type="text" id="path" placeholder="e.g., /">
+        </div>
+        <div class="form-group">
+          <label for="targetPath">Target Path:</label>
+          <input type="text" id="targetPath" placeholder="e.g., /app">
+          <span class="optional-text">optional</span>
+        </div>
+        <div class="form-group">
+          <label for="vhost">VHost:</label>
+          <input type="text" id="vhost" placeholder="e.g., domain.com">
+          <span class="optional-text">optional</span>
         </div>
       </div>
-      <div class="form-group">
-        <label for="host_port">Local Port:</label>
-        <input type="text" id="host_port" placeholder="e.g., 4445">
+      <div id="port-fields" style="display: none;">
+        <div class="form-group">
+          <label style="visibility: hidden;">Protocol(s):</label>
+          <div>
+            <label><input type="checkbox" name="protocol" value="tcp" checked> TCP</label>
+            <label><input type="checkbox" name="protocol" value="udp" checked> UDP</label>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="host_port">Local Port:</label>
+          <input type="text" id="host_port" placeholder="e.g., 4445">
+        </div>
+        <div class="form-group">
+          <label for="vm-port">VM:</label>
+          <select id="vm-port"></select>
+        </div>
+        <div class="form-group">
+          <label for="port-port">Remote Port:</label>
+          <input type="text" id="port-port" placeholder="e.g., 80">
+        </div>
       </div>
-      <div class="form-group">
-        <label for="vm-port">VM:</label>
-        <select id="vm-port"></select>
-      </div>
-      <div class="form-group">
-        <label for="port-port">Remote Port:</label>
-        <input type="text" id="port-port" placeholder="e.g., 80">
-      </div>
-      <div class="common-buttons">
-        <button type="button" onclick="addSshPortForward()">Add SSH (2222 -> VM:22)</button>
-        <button type="button" onclick="addHttpPortForward()">Add HTTP (8888 -> VM:80)</button>
-      </div>
-    </div>
-    <button type="submit">Add Rule</button>
-  </form>
-  <table id="rules">
-    <thead>
-      <tr>
-        <th>Type</th>
-        <th>VHost</th>
-        <th>Path</th>
-        <th>Destination</th>
-        <th>Target Path</th>
-        <th>Test</th>
-        <th>Action&nbsp;</th>
-      </tr>
-    </thead>
-    <tbody>
-    </tbody>
-  </table>
+      <button type="submit">Add Rule</button>
+    </form>
+    <div style="border-left: 1px solid var(--ctp-surface1);"></div> <!-- Divider -->
+    <table id="rules" style="background-color: var(--ctp-crust);">
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Source</th>
+          <th>Path</th>
+          <th>Destination</th>
+          <th>Target Path</th>
+          <th>Test</th>
+          <th>Action&nbsp;</th>
+        </tr>
+      </thead>
+      <tbody>
+      </tbody>
+    </table>
+  </div>
+  <div class="common-buttons" style="margin-top: 20px;">
+    <button type="button" onclick="addSshPortForward()">Add SSH (2222 -> VM:22)</button>
+    <button type="button" onclick="addHttpPortForward()">Add HTTP (8888 -> VM:80)</button>
+  </div>
+  </div>
 
   <div id="toaster-notification" class="toaster-notification"></div>
 
@@ -438,7 +445,7 @@
         );
 
         if (isDuplicatePort) {
-          alert(`A port forward rule already exists for local port ${hostPort}.`);
+          showToaster(`A port forward rule already exists for local port ${hostPort}.`, true);
           return;
         }
 
@@ -494,11 +501,11 @@
       tbody.innerHTML = '';
       for (const rule of rules) {
         const row = document.createElement('tr');
-        let vhost, path, targetPath, testInfo, typeDisplay;
+        let source, path, targetPath, testInfo, typeDisplay;
 
         if (rule.type === 'port') {
           typeDisplay = 'Port Forward';
-          vhost = rule.host_port;
+          source = rule.host_port;
           path = rule.protocols.join(', ').toUpperCase();
           targetPath = '';
           const tcpCommand = `telnet localhost ${rule.host_port}`;
@@ -513,7 +520,7 @@
           testInfo = commands.join('<br>');
         } else { // http
           typeDisplay = 'HTTP';
-          vhost = rule.vhost || '';
+          source = rule.vhost || '';
           path = rule.path || '';
           targetPath = rule.targetPath || '';
           const proxyUrl = `http://localhost:8080${path}`;
@@ -524,7 +531,7 @@
 
         row.innerHTML = `
           <td>${typeDisplay}</td>
-          <td>${vhost}</td>
+          <td>${source}</td>
           <td>${path}</td>
           <td>${rule.vm}:${rule.port}</td>
           <td>${targetPath}</td>
@@ -615,7 +622,7 @@
       document.getElementById('vm-port').value = document.getElementById('vm-port').options[1] ? document.getElementById('vm-port').options[1].value : ''; // Select first available VM
 
       document.querySelector('input[name="protocol"][value="tcp"]').checked = true;
-      document.querySelector('input[name="protocol"][value="udp"]').checked = false; // Only TCP for HTTP
+      document.querySelector('input[name="protocol"][value="udp"]').checked = true;
 
       document.getElementById('add-rule-form').dispatchEvent(new Event('submit'));
     }
