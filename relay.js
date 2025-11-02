@@ -1696,7 +1696,7 @@ class VMSession {
     } else if (msgType === 3) {
       console.log(`🌐 DHCP REQUEST from ${clientMACStr}`);
       this.sendDHCP(xid, clientMAC, 5, assignedIP);
-      console.log(`✅   DHCP ACK: ${assignedIP}`);
+      console.log(`✅ DHCP ACK: ${assignedIP}`);
     }
   }
 
