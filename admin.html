@@ -258,6 +258,36 @@
     button.delete-button:hover {
       background-color: var(--ctp-maroon);
     }
+
+    /* Tab styles */
+    .tabs {
+      display: flex;
+      margin-bottom: 0px; /* Removed space under tabs */
+      border-bottom: none; /* Remove border from tabs container */
+    }
+
+    .tab-button {
+      background-color: var(--ctp-mantle); /* Inactive background */
+      color: var(--ctp-blue); /* Inactive text color (previous active color) */
+      border: none;
+      padding: 10px 15px;
+      cursor: pointer;
+      transition: background-color 0.2s ease, color 0.2s ease;
+      border-radius: 5px 5px 0 0;
+      margin-right: 5px;
+    }
+
+    .tab-button:hover {
+      background-color: var(--ctp-surface1);
+      color: var(--ctp-text);
+    }
+
+    .tab-button.active {
+      background-color: var(--ctp-blue); /* Highlight color for active */
+      color: var(--ctp-crust); /* Text color for active */
+      border-bottom: 2px solid var(--ctp-blue); /* Apply border to active tab */
+      margin-bottom: 0; /* Remove negative margin */
+    }
   </style>
 </head>
 
@@ -283,10 +313,11 @@
   <div
     style="background-color: var(--ctp-mantle); padding: 20px; border-radius: 8px; display: flex; gap: 20px; align-items: flex-start;">
     <form id="add-rule-form">
-      <div>
-        <label><input type="radio" name="proxy_type" value="http" checked> HTTP Proxy</label>
-        <label><input type="radio" name="proxy_type" value="port"> Port Forward</label>
+      <div class="tabs">
+        <button type="button" class="tab-button active" data-proxy-type="http">HTTP Proxy</button>
+        <button type="button" class="tab-button" data-proxy-type="port">Port Forward</button>
       </div>
+      <div id="tab-content">
       <div id="http-fields">
         <div class="form-group">
           <label for="vm">&nbsp;</label>
@@ -324,6 +355,11 @@
           <input type="text" id="host_port" class="catppuccin-input" placeholder="e.g., 4445">
         </div>
         <div class="form-group">
+          <label for="bind_address">Bind Address:</label>
+          <input type="text" id="bind_address" class="catppuccin-input" value="0.0.0.0" placeholder="e.g., 0.0.0.0 or 127.0.0.1">
+          <span class="optional-text">0.0.0.0 for any interface</span>
+        </div>
+        <div class="form-group">
           <label for="vm-port">VM:</label>
           <select id="vm-port"></select>
         </div>
@@ -332,6 +368,7 @@
           <input type="text" id="port-port" class="catppuccin-input" placeholder="e.g., 80">
         </div>
       </div>
+      </div> <!-- Close tab-content -->
       <button type="submit">Add Rule</button>
     </form>
     <div style="border-left: 1px solid var(--ctp-surface1);"></div> <!-- Divider -->
@@ -340,9 +377,7 @@
         <tr>
           <th>Type</th>
           <th>Source</th>
-          <th>Path</th>
           <th>Destination</th>
-          <th>Target Path</th>
           <th>Test</th>
           <th>Action&nbsp;</th>
         </tr>
@@ -417,25 +452,42 @@
     fetchSessions();
     setInterval(fetchSessions, 5000);
 
-    const typeRadios = document.querySelectorAll('input[name="proxy_type"]');
     const httpFields = document.getElementById('http-fields');
     const portFields = document.getElementById('port-fields');
+    const tabButtons = document.querySelectorAll('.tab-button');
+    let currentProxyType = 'http'; // Default active tab
 
-    typeRadios.forEach(radio => {
-      radio.addEventListener('change', () => {
-        if (document.querySelector('input[name="proxy_type"]:checked').value === 'port') {
-          httpFields.style.display = 'none';
-          portFields.style.display = 'block';
+    function switchTab(proxyType) {
+      tabButtons.forEach(button => {
+        if (button.dataset.proxyType === proxyType) {
+          button.classList.add('active');
         } else {
-          httpFields.style.display = 'block';
-          portFields.style.display = 'none';
+          button.classList.remove('active');
         }
+      });
+
+      if (proxyType === 'port') {
+        httpFields.style.display = 'none';
+        portFields.style.display = 'block';
+      } else {
+        httpFields.style.display = 'block';
+        portFields.style.display = 'none';
+      }
+      currentProxyType = proxyType;
+    }
+
+    tabButtons.forEach(button => {
+      button.addEventListener('click', () => {
+        switchTab(button.dataset.proxyType);
       });
     });
 
+    // Initialize tab display
+    switchTab(currentProxyType);
+
     document.getElementById('add-rule-form').addEventListener('submit', async (e) => {
       e.preventDefault();
-      const proxyType = document.querySelector('input[name="proxy_type"]:checked').value;
+      const proxyType = currentProxyType;
       let rule;
 
       let selectedVm;
@@ -477,6 +529,7 @@
           vm: document.getElementById('vm-port').value,
           port: parseInt(document.getElementById('port-port').value),
           host_port: hostPort,
+          bind_address: document.getElementById('bind_address').value,
         };
       } else { // http
         rule = {
@@ -525,11 +578,13 @@
         const row = document.createElement('tr');
         let source, path, targetPath, testInfo, typeDisplay;
 
+        let sourceDisplay, destinationDisplay;
+
         if (rule.type === 'port') {
-          typeDisplay = 'Port Forward';
-          source = rule.host_port;
-          path = rule.protocols.join(', ').toUpperCase();
-          targetPath = '';
+          typeDisplay = `<span style="white-space: nowrap;">Port&nbsp;Forward</span>`;
+          sourceDisplay = `${rule.bind_address || '0.0.0.0'}:${rule.host_port}`;
+          destinationDisplay = `${rule.vm}:${rule.port} (${rule.protocols.join(', ').toUpperCase()})`;
+          targetPath = ''; // Not used in display, but keep for consistency
 
           if (rule.port === 22 && rule.protocols.includes('tcp')) {
             const sshCommand = `ssh 127.0.0.1 -p ${rule.host_port}`;
@@ -552,21 +607,19 @@
           }
         } else { // http
           typeDisplay = 'HTTP';
-          source = rule.vhost || '';
-          path = rule.path || '';
-          targetPath = rule.targetPath || '';
-          const proxyUrl = `http://localhost:8080${path}`;
-          const link = rule.vhost ? `http://${rule.vhost}:8080${path}` : proxyUrl;
-          const curlCommand = rule.vhost ? `curl -H "Host: ${rule.vhost}" ${proxyUrl}` : `curl ${proxyUrl}`;
-          testInfo = `<button onclick="copyToClipboard('${curlCommand}')" class="catppuccin-button">Copy</button> <code>${curlCommand}</code><br><a href="${link}" target="_blank">${link}</a>`;
+          const proxyHost = `127.0.0.1:${PROXY_PORT}`;
+          const link = rule.vhost ? `http://${rule.vhost}:${PROXY_PORT}${rule.path}` : `http://${proxyHost}${rule.path}`;
+          sourceDisplay = `<a href="${link}" target="_blank">${proxyHost}${rule.path}</a>`;
+          destinationDisplay = `${rule.vm}:${rule.port}${rule.targetPath || ''}`;
+          targetPath = ''; // Not used in display, but keep for consistency
+          const curlCommand = rule.vhost ? `curl -H "Host: ${rule.vhost}" ${link}` : `curl ${link}`;
+          testInfo = `<button onclick="copyToClipboard('${curlCommand}')" class="catppuccin-button">Copy</button> <code>${curlCommand}</code>`;
         }
 
         row.innerHTML = `
           <td>${typeDisplay}</td>
-          <td>${source}</td>
-          <td>${path}</td>
-          <td>${rule.vm}:${rule.port}</td>
-          <td>${targetPath}</td>
+          <td>${sourceDisplay}</td>
+          <td>${destinationDisplay}</td>
           <td>${testInfo}</td>
           <td><button onclick="deleteRule('${rule.id}')" class="catppuccin-button delete-button">Delete</button></td>
         `;
@@ -630,9 +683,7 @@
     }
 
     async function addSshPortForward() {
-      document.querySelector('input[name="proxy_type"][value="port"]').checked = true;
-      document.getElementById('http-fields').style.display = 'none';
-      document.getElementById('port-fields').style.display = 'block';
+      switchTab('port');
 
       document.getElementById('host_port').value = '2222';
       document.getElementById('port-port').value = '22';
@@ -645,21 +696,20 @@
     }
 
     async function addHttpPortForward() {
-      document.querySelector('input[name="proxy_type"][value="port"]').checked = true;
-      document.getElementById('http-fields').style.display = 'none';
-      document.getElementById('port-fields').style.display = 'block';
+      switchTab('http');
 
-      document.getElementById('host_port').value = '8888';
-      document.getElementById('port-port').value = '80';
-      document.getElementById('vm-port').value = document.getElementById('vm-port').options[1] ? document.getElementById('vm-port').options[1].value : ''; // Select first available VM
-
-      document.querySelector('input[name="protocol"][value="tcp"]').checked = true;
-      document.querySelector('input[name="protocol"][value="udp"]').checked = false;
+      document.getElementById('port').value = '80';
+      document.getElementById('path').value = '/';
+      document.getElementById('targetPath').value = '';
+      document.getElementById('vhost').value = '';
+      document.getElementById('vm').value = document.getElementById('vm').options[1] ? document.getElementById('vm').options[1].value : ''; // Select first available VM
 
       document.getElementById('add-rule-form').dispatchEvent(new Event('submit'));
     }
 
     loadRules();
+
+    const PROXY_PORT = 8080;
   </script>
 </body>
 

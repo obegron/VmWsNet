@@ -55,12 +55,15 @@ const TCP_WINDOW_SIZE = 1024 * 10;
 // WS_PORT: The port on which the WebSocket server will listen.
 // Defaults to 8443 for WSS and 8086 for WS.
 const WS_PORT = ENABLE_WSS ? 8443 : 8086;
+const WS_BIND_ADDRESS = "0.0.0.0"; // Default to binding on all interfaces
 
 // ADMIN_PORT: The port for the web-based admin interface.
 const ADMIN_PORT = 8001;
+const ADMIN_BIND_ADDRESS = "127.0.0.1"; // Default to binding on localhost
 
 // PROXY_PORT: The port for the HTTP reverse proxy server.
 const PROXY_PORT = 8080;
+const PROXY_BIND_ADDRESS = "127.0.0.1"; // Default to binding on localhost
 
 // ==============================================================================
 // END OF CONFIGURATION
@@ -120,16 +123,17 @@ if (ENABLE_WSS) {
     perMessageDeflate: false,
   });
 
-  httpsServer.listen(WS_PORT);
+  httpsServer.listen(WS_PORT, WS_BIND_ADDRESS);
   console.log(
-    `Secure WebSocket (WSS) VPN server, visit https://127.0.0.1:${WS_PORT} and trust your certificate`,
+    `Secure WebSocket (WSS) VPN server, visit https://${WS_BIND_ADDRESS}:${WS_PORT} and trust your certificate`,
   );
 } else {
   wss = new WebSocket.Server({
     port: WS_PORT,
+    host: WS_BIND_ADDRESS,
     perMessageDeflate: false,
   });
-  console.log(`WebSocket VPN server listening on port ${WS_PORT}`);
+  console.log(`WebSocket VPN server listening on ${WS_BIND_ADDRESS}:${WS_PORT}`);
 }
 
 console.log(
@@ -1970,6 +1974,7 @@ async function startTcpForward(rule) {
     );
   }
 
+  const bindAddress = rule.bind_address || '0.0.0.0';
   const server = net.createServer(async (localSocket) => {
     // Disable Nagle's algorithm for this socket.
     // This is crucial for responsive interactive sessions like SSH,
@@ -1979,14 +1984,14 @@ async function startTcpForward(rule) {
     const targetSession = ipToSession.get(rule.vm);
     if (!targetSession) {
       console.log(
-        `[TCP PROXY] VM ${rule.vm} not connected for incoming connection on port ${rule.host_port}`,
+        `[TCP PROXY] VM ${rule.vm} not connected for incoming connection on ${bindAddress}:${rule.host_port}`,
       );
       localSocket.end();
       return;
     }
 
     console.log(
-      `[TCP PROXY] Incoming connection on port ${rule.host_port}, connecting to VM ${rule.vm}:${rule.port}`,
+      `[TCP PROXY] Incoming connection on ${bindAddress}:${rule.host_port}, connecting to VM ${rule.vm}:${rule.port}`,
     );
 
     try {
@@ -2014,7 +2019,7 @@ async function startTcpForward(rule) {
 
       localSocket.on("close", () => {
         console.log(
-          `[TCP PROXY] Local client disconnected from port ${rule.host_port}`,
+          `[TCP PROXY] Local client disconnected from ${bindAddress}:${rule.host_port}`,
         );
         // downstream.unpipe(localSocket); // Replaced with manual handler
         downstream.removeAllListeners("data");
@@ -2042,8 +2047,8 @@ async function startTcpForward(rule) {
     }
   });
 
-  server.listen(rule.host_port, () => {
-    console.log(`[TCP PROXY] Server listening on port ${rule.host_port}`);
+  server.listen(rule.host_port, bindAddress, () => {
+    console.log(`[TCP PROXY] Server listening on ${bindAddress}:${rule.host_port}`);
     runningTcpProxies.set(rule.id, server);
   });
 
@@ -2095,9 +2100,10 @@ async function startUdpForward(rule) {
     targetSession.forwardUdpPacket(msg, rule.port, rinfo, rule.id);
   });
 
-  hostSocket.bind(rule.host_port, () => {
+  const bindAddress = rule.bind_address || '0.0.0.0';
+  hostSocket.bind(rule.host_port, bindAddress, () => {
     console.log(
-      `[UDP PROXY] Server listening on port 127.0.0.1:${rule.host_port}`,
+      `[UDP PROXY] Server listening on ${bindAddress}:${rule.host_port}`,
     );
     runningUdpProxies.set(rule.id, hostSocket);
     udpProxySockets.set(rule.id, hostSocket);
@@ -2203,8 +2209,8 @@ const adminServer = http.createServer((req, res) => {
   }
 });
 
-adminServer.listen(ADMIN_PORT, () => {
-  console.log(`💡 Admin UI listening on port http://127.0.0.1:${ADMIN_PORT}`);
+adminServer.listen(ADMIN_PORT, ADMIN_BIND_ADDRESS, () => {
+  console.log(`💡 Admin UI listening on http://${ADMIN_BIND_ADDRESS}:${ADMIN_PORT}`);
 });
 
 function findProxyRule(req) {
@@ -2407,8 +2413,8 @@ const proxyServer = http.createServer((req, res) => {
   }
 });
 
-proxyServer.listen(PROXY_PORT, () => {
+proxyServer.listen(PROXY_PORT, PROXY_BIND_ADDRESS, () => {
   console.log(
-    `💡 Proxy server listening on port http://127.0.0.1:${PROXY_PORT}`,
+    `💡 Proxy server listening on http://${PROXY_BIND_ADDRESS}:${PROXY_PORT}`,
   );
 });
