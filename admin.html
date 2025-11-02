@@ -438,6 +438,18 @@
       const proxyType = document.querySelector('input[name="proxy_type"]:checked').value;
       let rule;
 
+      let selectedVm;
+      if (proxyType === 'port') {
+        selectedVm = document.getElementById('vm-port').value;
+      } else { // http
+        selectedVm = document.getElementById('vm').value;
+      }
+
+      if (!selectedVm) {
+        showToaster('Please select an active VM.', true);
+        return;
+      }
+
       if (proxyType === 'port') {
         const protocols = Array.from(document.querySelectorAll('input[name="protocol"]:checked')).map(cb => cb.value);
         if (protocols.length === 0) {
@@ -518,16 +530,26 @@
           source = rule.host_port;
           path = rule.protocols.join(', ').toUpperCase();
           targetPath = '';
-          const tcpCommand = `telnet localhost ${rule.host_port}`;
-          const udpCommand = `echo "test" | nc -u -w1 localhost ${rule.host_port}`;
-          let commands = [];
-          if (rule.protocols.includes('tcp')) {
-            commands.push(`<button onclick="copyToClipboard('${tcpCommand}')" class="catppuccin-button copy-button">Copy</button> <code>${tcpCommand}</code>`);
+
+          if (rule.port === 22 && rule.protocols.includes('tcp')) {
+            const sshCommand = `ssh 127.0.0.1 -p ${rule.host_port}`;
+            testInfo = `<button onclick="copyToClipboard('${sshCommand}')" class="catppuccin-button copy-button">Copy</button> <code>${sshCommand}</code>`;
+          } else if (rule.port === 80 && rule.protocols.includes('tcp')) {
+            const link = `http://127.0.0.1:${rule.host_port}`;
+            const curlCommand = `curl ${link}`;
+            testInfo = `<button onclick="copyToClipboard('${curlCommand}')" class="catppuccin-button copy-button">Copy</button> <code>curl <a href="${link}" target="_blank">${link}</a></code>`;
+          } else {
+            const tcpCommand = `telnet localhost ${rule.host_port}`;
+            const udpCommand = `echo "test" | nc -u -w1 localhost ${rule.host_port}`;
+            let commands = [];
+            if (rule.protocols.includes('tcp')) {
+              commands.push(`<button onclick="copyToClipboard('${tcpCommand}')" class="catppuccin-button copy-button">Copy</button> <code>${tcpCommand}</code>`);
+            }
+            if (rule.protocols.includes('udp')) {
+              commands.push(`<button onclick="copyToClipboard('${udpCommand}')" class="catppuccin-button copy-button">Copy</button> <code>${udpCommand}</code>`);
+            }
+            testInfo = commands.join('<br>');
           }
-          if (rule.protocols.includes('udp')) {
-            commands.push(`<button onclick="copyToClipboard('${udpCommand}')" class="catppuccin-button copy-button">Copy</button> <code>${udpCommand}</code>`);
-          }
-          testInfo = commands.join('<br>');
         } else { // http
           typeDisplay = 'HTTP';
           source = rule.vhost || '';
@@ -617,7 +639,7 @@
       document.getElementById('vm-port').value = document.getElementById('vm-port').options[1] ? document.getElementById('vm-port').options[1].value : ''; // Select first available VM
 
       document.querySelector('input[name="protocol"][value="tcp"]').checked = true;
-      document.querySelector('input[name="protocol"][value="udp"]').checked = true;
+      document.querySelector('input[name="protocol"][value="udp"]').checked = false;
 
       document.getElementById('add-rule-form').dispatchEvent(new Event('submit'));
     }
@@ -632,7 +654,7 @@
       document.getElementById('vm-port').value = document.getElementById('vm-port').options[1] ? document.getElementById('vm-port').options[1].value : ''; // Select first available VM
 
       document.querySelector('input[name="protocol"][value="tcp"]').checked = true;
-      document.querySelector('input[name="protocol"][value="udp"]').checked = true;
+      document.querySelector('input[name="protocol"][value="udp"]').checked = false;
 
       document.getElementById('add-rule-form').dispatchEvent(new Event('submit'));
     }
