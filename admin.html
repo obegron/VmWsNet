@@ -160,12 +160,22 @@
       background-color: var(--ctp-maroon);
     }
 
-    .catppuccin-input {
+    input.catppuccin-input {
       padding: 8px;
       border: 1px solid var(--ctp-surface1);
       border-radius: 4px;
       background-color: var(--ctp-crust);
       color: var(--ctp-text);
+    }
+
+    input:-webkit-autofill,
+    input:-webkit-autofill:hover,
+    input:-webkit-autofill:focus,
+    input:-webkit-autofill:active {
+      -webkit-box-shadow: 0 0 0px 1000px var(--ctp-crust) inset !important;
+      -webkit-text-fill-color: var(--ctp-text) !important;
+      background-color: var(--ctp-crust) !important;
+      color: var(--ctp-text) !important;
     }
 
     .copy-button {
@@ -284,20 +294,20 @@
         </div>
         <div class="form-group">
           <label for="port">VM Port:</label>
-          <input type="text" id="port" placeholder="e.g., 80">
+          <input type="text" id="port" class="catppuccin-input" placeholder="e.g., 80">
         </div>
         <div class="form-group">
           <label for="path">Path:</label>
-          <input type="text" id="path" placeholder="e.g., /">
+          <input type="text" id="path" class="catppuccin-input" placeholder="e.g., /">
         </div>
         <div class="form-group">
           <label for="targetPath">Target Path:</label>
-          <input type="text" id="targetPath" placeholder="e.g., /app">
+          <input type="text" id="targetPath" class="catppuccin-input" placeholder="e.g., /app">
           <span class="optional-text">optional</span>
         </div>
         <div class="form-group">
           <label for="vhost">VHost:</label>
-          <input type="text" id="vhost" placeholder="e.g., domain.com">
+          <input type="text" id="vhost" class="catppuccin-input" placeholder="e.g., domain.com">
           <span class="optional-text">optional</span>
         </div>
       </div>
@@ -311,7 +321,7 @@
         </div>
         <div class="form-group">
           <label for="host_port">Local Port:</label>
-          <input type="text" id="host_port" placeholder="e.g., 4445">
+          <input type="text" id="host_port" class="catppuccin-input" placeholder="e.g., 4445">
         </div>
         <div class="form-group">
           <label for="vm-port">VM:</label>
@@ -319,7 +329,7 @@
         </div>
         <div class="form-group">
           <label for="port-port">Remote Port:</label>
-          <input type="text" id="port-port" placeholder="e.g., 80">
+          <input type="text" id="port-port" class="catppuccin-input" placeholder="e.g., 80">
         </div>
       </div>
       <button type="submit">Add Rule</button>
