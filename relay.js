@@ -34,7 +34,7 @@ const LOG_LEVEL_TRACE = 2;
 // LOG_LEVEL: Set to LOG_LEVEL_DEBUG for general debug logging,
 // LOG_LEVEL_TRACE for verbose packet-level trace logging, or
 // LOG_LEVEL_DISABLED to disable all debug/trace logging.
-const log_level = LOG_LEVEL_DISABLED;
+const log_level = LOG_LEVEL_TRACE;
 
 // GATEWAY_IP: The IP address of the virtual gateway within the VM's network.
 const GATEWAY_IP = "10.0.2.2";
@@ -350,6 +350,15 @@ class VMSession {
     const connKey = dstPort;
     const conn = this.reverseTcpConnections.get(connKey);
 
+    // At the start of handleReverseTCP, add:
+    if (log_level >= LOG_LEVEL_TRACE) {
+      console.log(
+        `[R-TRACE-SEQ] Packet: seq=${seqNum} len=${payload.length}, Current: vmSeq=${conn?.vmSeq}, Expected next: ${
+          (conn?.vmSeq || 0) + payload.length
+        }`,
+      );
+    }
+
     if (!conn) {
       if (this.recentlyClosed.has(connKey)) {
         return;
@@ -400,7 +409,8 @@ class VMSession {
       if (allSpaces || allZeros) {
         if (log_level >= LOG_LEVEL_TRACE) {
           console.log(
-            `[R-TRACE] Ignoring 6-byte ${allSpaces ? "spaces" : "zeros"
+            `[R-TRACE] Ignoring 6-byte ${
+              allSpaces ? "spaces" : "zeros"
             } artifact`,
           );
         }
@@ -420,49 +430,43 @@ class VMSession {
             `[R-TRACE] Ignoring retransmitted packet: seq=${seqNum} but already have up to ${conn.vmSeq}`,
           );
         }
-        // Send a fresh ACK to show what we've received so far. This should stop the retransmissions.
+        // Send ACK with current expected sequence number
         this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, srcIP, dstIP, {
           ack: true,
         });
-        return; // ← CRITICAL: Must return here, don't process the payload!
+        return;
       }
 
-      // If the sequence number is from the future, the packets are out of order.
-      // IMPORTANT: Use seqLessThan for proper wraparound handling
-      if (!this.seqLessThan(seqNum, conn.vmSeq) && seqNum !== conn.vmSeq) {
+      // Check if this is future data (out of order)
+      if (this.seqLessThan(conn.vmSeq, seqNum)) {
         if (log_level >= LOG_LEVEL_DEBUG) {
           console.log(
-            `[R-TRACE] Ignoring out-of-order (future) packet: seq=${seqNum} expected=${conn.vmSeq}`,
+            `[R-TRACE] Buffering out-of-order packet: seq=${seqNum} expected=${conn.vmSeq}`,
           );
         }
+        // TODO: Implement out-of-order packet buffering
+        // For now, just ACK what we have
         this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, srcIP, dstIP, {
           ack: true,
         });
-        return; // ← CRITICAL: Must return here too!
+        return;
       }
 
-      // If we reach here, seqNum === conn.vmSeq. This is the expected in-order packet.
+      // If we reach here, seqNum === conn.vmSeq (in-order data)
       if (log_level >= LOG_LEVEL_DEBUG) {
         console.log(
-          `[R-TRACE-DATA] Writing ${payload.length} bytes to downstream. Data (first 32 bytes): ${payload.toString("hex", 0, Math.min(payload.length, 32))
+          `[R-TRACE-DATA] Writing ${payload.length} bytes to downstream. Data (first 32 bytes): ${
+            payload.toString("hex", 0, Math.min(payload.length, 32))
           }`,
         );
       }
 
-      const canWrite = conn.downstream.write(payload);
+      conn.downstream.write(payload);
       conn.vmSeq = (conn.vmSeq + payload.length) >>> 0;
 
-      if (canWrite) {
-        this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, srcIP, dstIP, {
-          ack: true,
-        });
-      } else {
-        conn.downstream.once("drain", () => {
-          this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, srcIP, dstIP, {
-            ack: true,
-          });
-        });
-      }
+      this.sendTCP(conn, Buffer.alloc(0), dstPort, srcPort, srcIP, dstIP, {
+        ack: true,
+      });
     }
 
     if (FIN) {
@@ -553,7 +557,8 @@ class VMSession {
 
     if (log_level >= LOG_LEVEL_DEBUG) {
       console.log(
-        `🔍 ARP ${opcode === 1 ? "Request" : "Reply"
+        `🔍 ARP ${
+          opcode === 1 ? "Request" : "Reply"
         }: ${senderIP} -> ${targetIP}`,
       );
     }
@@ -641,10 +646,10 @@ class VMSession {
       const proto = protocol === 6
         ? "TCP"
         : protocol === 17
-          ? "UDP"
-          : protocol === 1
-            ? "ICMP"
-            : protocol;
+        ? "UDP"
+        : protocol === 1
+        ? "ICMP"
+        : protocol;
       console.log(`📦 IPv4 ${proto}: ${srcIP} -> ${dstIP}`);
     }
 
@@ -766,7 +771,7 @@ class VMSession {
       socket.setNoDelay(true);
       try {
         socket.setKeepAlive(true, 30000);
-      } catch (_e) { }
+      } catch (_e) {}
 
       const isn = Math.floor(Math.random() * 0xFFFFFFFF);
       const actualWindow = window << windowScale;
@@ -938,11 +943,13 @@ class VMSession {
       if (allSpaces || allZeros) {
         if (log_level >= LOG_LEVEL_DEBUG) {
           console.log(
-            `   🔍 6-byte packet: ${allSpaces ? "all spaces (0x20)" : "all zeros"
+            `   🔍 6-byte packet: ${
+              allSpaces ? "all spaces (0x20)" : "all zeros"
             }`,
           );
           console.log(
-            `   ⚠️ Ignoring VM TCP stack artifact (6-byte ${allSpaces ? "spaces" : "zeros"
+            `   ⚠️ Ignoring VM TCP stack artifact (6-byte ${
+              allSpaces ? "spaces" : "zeros"
             })`,
           );
         }
@@ -1046,10 +1053,13 @@ class VMSession {
   }
 
   seqLessThan(a, b) {
-    // The subtraction (a - b) is cast to an unsigned 32-bit integer
-    // to correctly handle TCP sequence number wraparound. A result
-    // greater than 2^31 - 1 indicates that 'a' is "less than" 'b'.
-    return ((a - b) >>> 0) > 0x7FFFFFFF;
+    // Handle 32-bit unsigned integer wrap-around
+    const diff = (a - b) >>> 0;
+    return diff > 0x7FFFFFFF;
+  }
+
+  seqLessThanOrEqual(a, b) {
+    return a === b || this.seqLessThan(a, b);
   }
 
   seqDiff(a, b) {
@@ -1964,7 +1974,7 @@ async function startTcpForward(rule) {
     // Disable Nagle's algorithm for this socket.
     // This is crucial for responsive interactive sessions like SSH,
     // preventing delays by sending small packets immediately.
-    //localSocket.setNoDelay(true);
+    localSocket.setNoDelay(true);
 
     const targetSession = ipToSession.get(rule.vm);
     if (!targetSession) {
@@ -2328,7 +2338,8 @@ async function proxyRequest(req, res, rule) {
         console.log(`[PROXY] Sending response (${fullResponse.length} bytes)`);
         if (log_level >= LOG_LEVEL_DEBUG) {
           console.log(
-            `[PROXY] First 400 bytes (hex): ${fullResponse.slice(0, 400).toString("hex")
+            `[PROXY] First 400 bytes (hex): ${
+              fullResponse.slice(0, 400).toString("hex")
             }`,
           );
         }
