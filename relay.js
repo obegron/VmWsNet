@@ -5,24 +5,30 @@ const crypto = require("crypto");
 
 // ==============================================================================
 // CONFIGURATION
-// All user-configurable settings are located in this section.
+// Settings can be configured here as defaults, but can be overridden by
+// environment variables.
 // ==============================================================================
 
 // --- Basic Settings ---
 // ==============================================================================
 
-const RATE_LIMIT_KBPS = 1024;
+// RATE_LIMIT_KBPS: Maximum upload/download bandwidth for each VM in kilobytes per second.
+// ENV: RATE_LIMIT_KBPS
+const RATE_LIMIT_KBPS = process.env.RATE_LIMIT_KBPS ? parseInt(process.env.RATE_LIMIT_KBPS, 10) : 1024;
 
 // MAX_CONNECTIONS_PER_IP: The maximum number of concurrent WebSocket connections allowed from a single IP address.
-const MAX_CONNECTIONS_PER_IP = 4;
+// ENV: MAX_CONNECTIONS_PER_IP
+const MAX_CONNECTIONS_PER_IP = process.env.MAX_CONNECTIONS_PER_IP ? parseInt(process.env.MAX_CONNECTIONS_PER_IP, 10) : 4;
 
 // ENABLE_WSS: Set to true to use Secure WebSockets (WSS), false for standard WebSockets (WS).
 // Requires cert.pem and key.pem files to be present if true.
-const ENABLE_WSS = true;
+// ENV: ENABLE_WSS
+const ENABLE_WSS = process.env.ENABLE_WSS !== undefined ? process.env.ENABLE_WSS === 'true' : true;
 
 // ENABLE_VM_TO_VM: Set to true to allow virtual machines on the same relay to communicate with each other.
 // If false, VMs are isolated and can only access the gateway/internet.
-const ENABLE_VM_TO_VM = true;
+// ENV: ENABLE_VM_TO_VM
+const ENABLE_VM_TO_VM = process.env.ENABLE_VM_TO_VM !== undefined ? process.env.ENABLE_VM_TO_VM === 'true' : true;
 
 // --- Advanced Settings ---
 // ==============================================================================
@@ -31,39 +37,57 @@ const LOG_LEVEL_DISABLED = 0;
 const LOG_LEVEL_DEBUG = 1;
 const LOG_LEVEL_TRACE = 2;
 
-// LOG_LEVEL: Set to LOG_LEVEL_DEBUG for general debug logging,
+// log_level: Set to LOG_LEVEL_DEBUG for general debug logging,
 // LOG_LEVEL_TRACE for verbose packet-level trace logging, or
 // LOG_LEVEL_DISABLED to disable all debug/trace logging.
-const log_level = LOG_LEVEL_TRACE;
+// ENV: LOG_LEVEL
+const log_level = process.env.LOG_LEVEL ? parseInt(process.env.LOG_LEVEL, 10) : LOG_LEVEL_TRACE;
 
 // GATEWAY_IP: The IP address of the virtual gateway within the VM's network.
-const GATEWAY_IP = "10.0.2.2";
+// ENV: GATEWAY_IP
+const GATEWAY_IP = process.env.GATEWAY_IP || "10.0.2.2";
 
 // DHCP_START: The starting IP address for the DHCP pool (the last octet).
-const DHCP_START = 15; // Assigns IPs from 10.0.2.15
+// ENV: DHCP_START
+const DHCP_START = process.env.DHCP_START ? parseInt(process.env.DHCP_START, 10) : 15; // Assigns IPs from 10.0.2.15
 
 // DHCP_END: The ending IP address for the DHCP pool (the last octet).
-const DHCP_END = 254; // Assigns IPs up to 10.0.2.254
+// ENV: DHCP_END
+const DHCP_END = process.env.DHCP_END ? parseInt(process.env.DHCP_END, 10) : 254; // Assigns IPs up to 10.0.2.254
 
 // DNS_SERVER_IP: The IP address of the DNS server provided to the VMs via DHCP.
-const DNS_SERVER_IP = "8.8.8.8";
+// ENV: DNS_SERVER_IP
+const DNS_SERVER_IP = process.env.DNS_SERVER_IP || "8.8.8.8";
 
 // TCP_WINDOW_SIZE: The TCP window size used for connections to and from the VM.
 // A larger size may improve performance for high-latency connections.
-const TCP_WINDOW_SIZE = 1024 * 10;
+// ENV: TCP_WINDOW_SIZE
+const TCP_WINDOW_SIZE = process.env.TCP_WINDOW_SIZE ? parseInt(process.env.TCP_WINDOW_SIZE, 10) : 1024 * 10;
 
 // WS_PORT: The port on which the WebSocket server will listen.
 // Defaults to 8443 for WSS and 8086 for WS.
-const WS_PORT = ENABLE_WSS ? 8443 : 8086;
-const WS_BIND_ADDRESS = "0.0.0.0"; // Default to binding on all interfaces
+// ENV: WS_PORT
+const WS_PORT = process.env.WS_PORT ? parseInt(process.env.WS_PORT, 10) : (ENABLE_WSS ? 8443 : 8086);
+
+// WS_BIND_ADDRESS: IP address for the WebSocket server to bind to.
+// ENV: WS_BIND_ADDRESS
+const WS_BIND_ADDRESS = process.env.WS_BIND_ADDRESS || "0.0.0.0"; // Default to binding on all interfaces
 
 // ADMIN_PORT: The port for the web-based admin interface.
-const ADMIN_PORT = 8001;
-const ADMIN_BIND_ADDRESS = "127.0.0.1"; // Default to binding on localhost
+// ENV: ADMIN_PORT
+const ADMIN_PORT = process.env.ADMIN_PORT ? parseInt(process.env.ADMIN_PORT, 10) : 8001;
+
+// ADMIN_BIND_ADDRESS: IP address for the admin interface to bind to.
+// ENV: ADMIN_BIND_ADDRESS
+const ADMIN_BIND_ADDRESS = process.env.ADMIN_BIND_ADDRESS || "127.0.0.1"; // Default to binding on localhost
 
 // PROXY_PORT: The port for the HTTP reverse proxy server.
-const PROXY_PORT = 8080;
-const PROXY_BIND_ADDRESS = "127.0.0.1"; // Default to binding on localhost
+// ENV: PROXY_PORT
+const PROXY_PORT = process.env.PROXY_PORT ? parseInt(process.env.PROXY_PORT, 10) : 8080;
+
+// PROXY_BIND_ADDRESS: IP address for the reverse proxy to bind to.
+// ENV: PROXY_BIND_ADDRESS
+const PROXY_BIND_ADDRESS = process.env.PROXY_BIND_ADDRESS || "127.0.0.1"; // Default to binding on localhost
 
 // ==============================================================================
 // END OF CONFIGURATION
