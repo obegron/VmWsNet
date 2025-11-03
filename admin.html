@@ -246,8 +246,9 @@
       margin-bottom: 10px;
     }
 
-    .common-buttons button:hover,
-    button[type="submit"]:hover {
+    .add-rule-button {
+      margin-top: auto; /* Push to the bottom */
+    }
       background-color: var(--ctp-sapphire);
     }
 
@@ -283,7 +284,7 @@
     }
 
     .tab-button.active {
-      background-color: var(--ctp-blue); /* Highlight color for active */
+      background-color: var(--ctp-mauve); /* Highlight color for active */
       color: var(--ctp-crust); /* Text color for active */
       border-bottom: 2px solid var(--ctp-blue); /* Apply border to active tab */
       margin-bottom: 0; /* Remove negative margin */
@@ -296,6 +297,8 @@
       border: 1px solid var(--ctp-surface1);
       border-radius: 8px;
       background-color: var(--ctp-crust);
+      display: flex;
+      flex-direction: column;
     }
 
     .rules-table {
@@ -384,7 +387,7 @@
         </div>
       </div>
       </div> <!-- Close tab-content -->
-      <button type="submit">Add Rule</button>
+      <button type="submit" class="add-rule-button">Add Rule</button>
     </form>
     <div style="border-left: 1px solid var(--ctp-surface1);"></div> <!-- Divider -->
     <table id="rules" class="rules-table">
