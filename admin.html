@@ -261,7 +261,7 @@
 
     /* Tab styles */
     .tabs {
-      display: flex;
+      display: inline-flex;
       margin-bottom: 0;
       border-bottom: 2px solid var(--ctp-surface1); /* Line under tabs */
     }
@@ -288,6 +288,21 @@
       border-bottom: 2px solid var(--ctp-blue); /* Apply border to active tab */
       margin-bottom: 0; /* Remove negative margin */
     }
+
+    .rule-form {
+      flex: 0 0 14.0em; /* Don't grow, don't shrink, fixed width in em */
+      height: 28em; /* Fixed height in em */
+      padding: 15px;
+      border: 1px solid var(--ctp-surface1);
+      border-radius: 8px;
+      background-color: var(--ctp-crust);
+    }
+
+    .rules-table {
+      flex: 1; /* Allow to grow */
+      min-width: 400px; /* Minimum width for the table */
+      background-color: var(--ctp-crust);
+    }
   </style>
 </head>
 
@@ -312,7 +327,7 @@
   <h2>Reverse Proxy Rules</h2>
   <div
     style="background-color: var(--ctp-mantle); padding: 20px; border-radius: 8px; display: flex; gap: 20px; align-items: flex-start;">
-    <form id="add-rule-form">
+    <form id="add-rule-form" class="rule-form">
       <div class="tabs">
         <button type="button" class="tab-button active" data-proxy-type="http">HTTP Proxy</button>
         <button type="button" class="tab-button" data-proxy-type="port">Port Forward</button>
@@ -372,7 +387,7 @@
       <button type="submit">Add Rule</button>
     </form>
     <div style="border-left: 1px solid var(--ctp-surface1);"></div> <!-- Divider -->
-    <table id="rules" style="background-color: var(--ctp-crust);">
+    <table id="rules" class="rules-table">
       <thead>
         <tr>
           <th>Type</th>
